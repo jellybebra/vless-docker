@@ -100,7 +100,7 @@ login_panel() {
 api_post() {
   local endpoint="$1"
   shift || true
-  log "API POST ${endpoint}"
+  log "API POST ${endpoint}" >&2
   curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" -X POST "${BASE_URL}${endpoint}" "$@"
 }
 
