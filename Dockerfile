@@ -27,7 +27,7 @@ RUN wget -q -O x-ui-linux-amd64.tar.gz \
     && chmod +x /usr/local/x-ui/x-ui \
     && chmod +x /usr/local/x-ui/bin/xray-linux-amd64
 
-COPY docker/entrypoint.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 80 443 8080
