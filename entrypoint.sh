@@ -20,9 +20,15 @@ require_env SELF_SNI_DOMAIN
 
 XUI_WEBPATH="${XUI_WEBPATH#/}"
 XUI_WEBPATH="${XUI_WEBPATH%/}"
+XUI_PORT="${XUI_PORT:-8080}"
 SELF_SNI_PORT="${SELF_SNI_PORT:-9000}"
 
-BASE_URL="http://127.0.0.1:8080/${XUI_WEBPATH}"
+if ! [[ "${XUI_PORT}" =~ ^[0-9]+$ ]] || ((XUI_PORT < 1 || XUI_PORT > 65535)); then
+  log "ERROR: XUI_PORT must be an integer in range 1..65535"
+  exit 1
+fi
+
+BASE_URL="http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
 COOKIE_JAR="/tmp/xui_cookie.jar"
 PANEL_INFO_FILE="/etc/x-ui/3x-ui.txt"
 
@@ -30,9 +36,9 @@ readonly CURL_CONNECT_TIMEOUT=3
 readonly CURL_MAX_TIME=15
 
 PANEL_ORIGINS=(
-  "http://127.0.0.1:8080"
-  "http://localhost:8080"
-  "http://[::1]:8080"
+  "http://127.0.0.1:${XUI_PORT}"
+  "http://localhost:${XUI_PORT}"
+  "http://[::1]:${XUI_PORT}"
 )
 
 build_login_urls_for_origin() {
@@ -55,7 +61,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 wait_for_panel() {
-  log "Waiting for x-ui panel on 127.0.0.1:8080 ..."
+  log "Waiting for x-ui panel on 127.0.0.1:${XUI_PORT} ..."
   for _ in $(seq 1 180); do
     for origin in "${PANEL_ORIGINS[@]}"; do
       if curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time 5 -sS -o /dev/null "${origin}/"; then
@@ -343,7 +349,7 @@ persist_panel_info() {
   mkdir -p "$(dirname "${PANEL_INFO_FILE}")"
   cat >"${PANEL_INFO_FILE}" <<EOF
 3x-ui panel:
-URL: http://127.0.0.1:8080/${XUI_WEBPATH}
+URL: http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}
 Username: ${XUI_USERNAME}
 Password: ${XUI_PASSWORD}
 
@@ -361,11 +367,11 @@ main() {
     exit 1
   fi
 
-  log "Applying x-ui settings (port 8080, HTTP, custom credentials/path) ..."
+  log "Applying x-ui settings (port ${XUI_PORT}, HTTP, custom credentials/path) ..."
   ./x-ui setting \
     -username "${XUI_USERNAME}" \
     -password "${XUI_PASSWORD}" \
-    -port "8080" \
+    -port "${XUI_PORT}" \
     -webBasePath "${XUI_WEBPATH}" >/dev/null 2>&1 || true
   ./x-ui migrate >/dev/null 2>&1 || true
 
@@ -500,7 +506,7 @@ main() {
 
   persist_panel_info
   log "Provisioning completed."
-  log "Panel: http://<server-ip>:8080/${XUI_WEBPATH}"
+  log "Panel: http://<server-ip>:${XUI_PORT}/${XUI_WEBPATH}"
   log "Dest: 127.0.0.1:${SELF_SNI_PORT}; SNI: ${SELF_SNI_DOMAIN}; Xver: 1"
 
   # Keep container alive and fail fast if one of core processes dies.

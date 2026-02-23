@@ -9,24 +9,28 @@
 
 ## Быстрый старт
 
-1. Создайте файл `docker-compose.yml` и вставьте:
+1. Создайте файл `docker-compose.yml` и вставьте, заменив значения:
 
     ```yaml
     services:
       vless:
-        image: ghcr.io/jellybebra/vless-docker:latest
-        container_name: vless-selfsni
-        restart: unless-stopped
+        image: ghcr.io/jellybebra/vless-docker:latest # образ контейнера
+        container_name: vless-selfsni # имя контейнера
+        restart: unless-stopped # автозапуск после перезагрузки/падения
+
         environment:
-          XUI_USERNAME: "admin"
-          XUI_PASSWORD: "change_me"
-          XUI_WEBPATH: "panelpath"
-          SELF_SNI_DOMAIN: "example.com"
-          SELF_SNI_PORT: "9000"
+          XUI_USERNAME: "admin" # логин в панель 3x-ui
+          XUI_PASSWORD: "change_me" # пароль в панель 3x-ui
+          XUI_WEBPATH: "panelpath" # путь панели в URL
+          XUI_PORT: "8080" # порт панели 3x-ui
+          SELF_SNI_DOMAIN: "example.com" # ваш домен для self-sni с корректной A-записью на сервер
+          SELF_SNI_PORT: "9000" # локальный nginx-таргет для reality dest
+
         ports:
-          - "80:80"
-          - "443:443"
-          - "8080:8080"
+          - "80:80" # HTTP (редирект на HTTPS)
+          - "443:443" # VLESS Reality
+          - "8080:8080" # панель 3x-ui
+
         volumes:
           - ./data/xui:/etc/x-ui
           - ./data/letsencrypt:/etc/letsencrypt
@@ -34,23 +38,14 @@
           - ./data/cert:/root/cert
     ```
 
-2. Замените значения:
-
-   - `XUI_USERNAME` — логин в панель.
-   - `XUI_PASSWORD` — пароль в панель.
-   - `XUI_WEBPATH` — путь панели (например `panelpath`).
-   - `SELF_SNI_DOMAIN` — ваш домен с корректной A-записью на сервер.
-
-
-3. Запустите:
+2. Запустите:
 
     ```bash
     docker compose up -d
     ```
 
-4. Откройте панель:
+3. Откройте панель:
 
     ```text
-    http://<IP_сервера>:8080/<XUI_WEBPATH>
+    http://<IP_сервера>:<XUI_PORT>/<XUI_WEBPATH>
     ```
-
