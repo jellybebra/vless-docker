@@ -11,6 +11,7 @@ RUN apt-get update \
         jq \
         nginx \
         openssl \
+        procps \
         tar \
         tzdata \
         wget \
