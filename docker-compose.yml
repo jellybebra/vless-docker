@@ -1,0 +1,20 @@
+services:
+  vless:
+    image: ghcr.io/jellybebra/vless-docker:latest
+    container_name: vless-selfsni
+    restart: unless-stopped
+    environment:
+      XUI_USERNAME: "admin"
+      XUI_PASSWORD: "change_me"
+      XUI_WEBPATH: "panelpath"
+      SELF_SNI_DOMAIN: "example.com"
+      SELF_SNI_PORT: "9000"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - ./data/xui:/etc/x-ui
+      - ./data/letsencrypt:/etc/letsencrypt
+      - ./data/www:/var/www/html
+      - ./data/cert:/root/cert
