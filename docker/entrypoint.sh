@@ -26,12 +26,26 @@ BASE_URL="http://127.0.0.1:8080/${XUI_WEBPATH}"
 COOKIE_JAR="/tmp/xui_cookie.jar"
 PANEL_INFO_FILE="/etc/x-ui/3x-ui.txt"
 
-LOGIN_URLS=(
-  "http://127.0.0.1:8080/${XUI_WEBPATH}/login"
-  "http://127.0.0.1:8080/${XUI_WEBPATH}/login/"
-  "http://127.0.0.1:8080/login"
-  "http://127.0.0.1:8080/login/"
+readonly CURL_CONNECT_TIMEOUT=3
+readonly CURL_MAX_TIME=15
+
+PANEL_ORIGINS=(
+  "http://127.0.0.1:8080"
+  "http://localhost:8080"
+  "http://[::1]:8080"
 )
+
+build_login_urls_for_origin() {
+  local origin="$1"
+  cat <<EOF
+${origin}/${XUI_WEBPATH}/login
+${origin}/${XUI_WEBPATH}/login/
+${origin}/${XUI_WEBPATH}/panel/login
+${origin}/${XUI_WEBPATH}/panel/login/
+${origin}/login
+${origin}/login/
+EOF
+}
 
 cleanup() {
   set +e
@@ -43,14 +57,11 @@ trap cleanup EXIT INT TERM
 wait_for_panel() {
   log "Waiting for x-ui panel on 127.0.0.1:8080 ..."
   for _ in $(seq 1 180); do
-    for url in "${LOGIN_URLS[@]}"; do
-      if curl -fsS "${url}" >/dev/null 2>&1; then
+    for origin in "${PANEL_ORIGINS[@]}"; do
+      if curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time 5 -sS -o /dev/null "${origin}/"; then
         return 0
       fi
     done
-    if curl -fsS "http://127.0.0.1:8080/" >/dev/null 2>&1; then
-      return 0
-    fi
     sleep 1
   done
   log "ERROR: x-ui panel did not become ready"
@@ -58,20 +69,28 @@ wait_for_panel() {
 }
 
 login_panel() {
-  local payload resp url
+  local payload resp origin url
+  log "Trying panel login ..."
   payload="$(jq -cn --arg u "${XUI_USERNAME}" --arg p "${XUI_PASSWORD}" '{username:$u,password:$p}')"
 
-  for url in "${LOGIN_URLS[@]}"; do
-    resp="$(curl -sS -c "${COOKIE_JAR}" -X POST "${url}" -H "Content-Type: application/json" -d "${payload}" || true)"
-    if jq -e '.success == true' >/dev/null 2>&1 <<<"${resp}"; then
-      if [[ "${url}" == http://127.0.0.1:8080/login* ]]; then
-        BASE_URL="http://127.0.0.1:8080"
-      else
-        BASE_URL="http://127.0.0.1:8080/${XUI_WEBPATH}"
+  for origin in "${PANEL_ORIGINS[@]}"; do
+    while IFS= read -r url; do
+      resp="$(
+        curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" \
+          -sS -c "${COOKIE_JAR}" -X POST "${url}" \
+          -H "Content-Type: application/json" -d "${payload}" || true
+      )"
+
+      if jq -e '.success == true' >/dev/null 2>&1 <<<"${resp}"; then
+        if [[ "${url}" == "${origin}/login"* ]]; then
+          BASE_URL="${origin}"
+        else
+          BASE_URL="${origin}/${XUI_WEBPATH}"
+        fi
+        log "Panel login successful via ${url}"
+        return 0
       fi
-      log "Panel login successful via ${url}"
-      return 0
-    fi
+    done < <(build_login_urls_for_origin "${origin}")
   done
 
   log "ERROR: panel login failed on all known URLs"
@@ -81,7 +100,8 @@ login_panel() {
 api_post() {
   local endpoint="$1"
   shift || true
-  curl -sS -b "${COOKIE_JAR}" -X POST "${BASE_URL}${endpoint}" "$@"
+  log "API POST ${endpoint}"
+  curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" -X POST "${BASE_URL}${endpoint}" "$@"
 }
 
 panel_list_inbounds() {
@@ -354,6 +374,7 @@ main() {
   ./x-ui &
 
   wait_for_panel
+  log "Panel is reachable."
   login_panel
 
   local list_resp inbound inbound_id settings stream sniffing
@@ -485,7 +506,7 @@ main() {
 
   # Keep container alive and fail fast if one of core processes dies.
   while true; do
-    if ! curl -fsS "${BASE_URL}/login" >/dev/null 2>&1; then
+    if ! curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time 5 -sS -o /dev/null "${BASE_URL}/"; then
       log "ERROR: x-ui panel is not reachable"
       exit 1
     fi
