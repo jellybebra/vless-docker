@@ -321,9 +321,8 @@ EOF
 
 start_or_reload_nginx() {
   nginx -t
-  if pgrep nginx >/dev/null 2>&1; then
-    nginx -s reload
-  else
+  # Prefer reload; if nginx is not started yet, fallback to start.
+  if ! nginx -s reload >/dev/null 2>&1; then
     nginx
   fi
 }
