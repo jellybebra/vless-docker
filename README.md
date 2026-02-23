@@ -7,24 +7,21 @@
 - У домена в `SELF_SNI_DOMAIN` должна быть A-запись на IP сервера без проксирования
 
 
-## Быстрый старт
+## Как пользоваться
 
 1. Создайте файл `docker-compose.yml` и вставьте, заменив значения:
 
     ```yaml
     services:
       vless:
-        image: ghcr.io/jellybebra/vless-docker:latest # образ контейнера
-        container_name: vless-selfsni # имя контейнера
-        restart: unless-stopped # автозапуск после перезагрузки/падения
+        image: ghcr.io/jellybebra/vless-docker:latest
+        restart: unless-stopped
 
         environment:
           XUI_USERNAME: "admin" # логин в панель 3x-ui
           XUI_PASSWORD: "change_me" # пароль в панель 3x-ui
           XUI_WEBPATH: "panelpath" # путь панели в URL
-          XUI_PORT: "8080" # порт панели 3x-ui
-          SELF_SNI_DOMAIN: "example.com" # ваш домен для self-sni с корректной A-записью на сервер
-          SELF_SNI_PORT: "9000" # локальный nginx-таргет для reality dest
+          SELF_SNI_DOMAIN: "example.com" # ваш домен для self-sni
 
         ports:
           - "80:80" # HTTP (редирект на HTTPS)
@@ -47,5 +44,5 @@
 3. Откройте панель:
 
     ```text
-    http://<IP_сервера>:<XUI_PORT>/<XUI_WEBPATH>
+    http://<IP_сервера>:8080/<XUI_WEBPATH>
     ```
