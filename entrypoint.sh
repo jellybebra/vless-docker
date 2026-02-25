@@ -485,21 +485,28 @@ main() {
     ' <<<"${stream}")"
   ensure_success "$(panel_update_inbound "${inbound_id}" false "${settings}" "${stream}" "${sniffing}")" "apply dest/sni/xver"
 
-  log "Requesting new Reality cert/key pair (Get New Cert) ..."
-  keys_resp="$(panel_get_new_x25519)"
-  ensure_success "${keys_resp}" "getNewX25519Cert for final update"
-  priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
-  pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
+  priv_key="$(jq -r '.realitySettings.privateKey // empty' <<<"${stream}")"
+  pub_key="$(jq -r '.realitySettings.settings.publicKey // empty' <<<"${stream}")"
 
-  stream="$(jq -c \
-    --arg priv "${priv_key}" \
-    --arg pub "${pub_key}" \
-    '
-    .realitySettings = (.realitySettings // {}) |
-    .realitySettings.privateKey = $priv |
-    .realitySettings.settings = (.realitySettings.settings // {}) |
-    .realitySettings.settings.publicKey = $pub
-    ' <<<"${stream}")"
+  if [[ -z "${priv_key}" || -z "${pub_key}" ]]; then
+    log "Reality cert/key pair is missing, requesting a new pair (Get New Cert) ..."
+    keys_resp="$(panel_get_new_x25519)"
+    ensure_success "${keys_resp}" "getNewX25519Cert for final update"
+    priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
+    pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
+
+    stream="$(jq -c \
+      --arg priv "${priv_key}" \
+      --arg pub "${pub_key}" \
+      '
+      .realitySettings = (.realitySettings // {}) |
+      .realitySettings.privateKey = $priv |
+      .realitySettings.settings = (.realitySettings.settings // {}) |
+      .realitySettings.settings.publicKey = $pub
+      ' <<<"${stream}")"
+  else
+    log "Keeping existing Reality cert/key pair to preserve client compatibility after restart."
+  fi
 
   log "Saving inbound update and enabling inbound back ..."
   ensure_success "$(panel_update_inbound "${inbound_id}" true "${settings}" "${stream}" "${sniffing}")" "enable inbound with self-sni settings"
