@@ -26,7 +26,7 @@
         ports:
           - "80:80" # HTTP (редирект на HTTPS)
           - "443:443" # VLESS Reality
-          - "8080:8080" # панель 3x-ui
+          # - "8080:8080" # опционально: локальный HTTP-доступ к панели (без TLS)
 
         volumes:
           - ./data/xui:/etc/x-ui
@@ -44,5 +44,5 @@
 3. Откройте панель:
 
     ```text
-    http://<IP_сервера>:8080/<XUI_WEBPATH>
+    https://<SELF_SNI_DOMAIN>/<XUI_WEBPATH>
     ```

@@ -315,6 +315,22 @@ server {
     real_ip_header proxy_protocol;
     set_real_ip_from 127.0.0.1;
 
+    location = /${XUI_WEBPATH} {
+        return 301 /${XUI_WEBPATH}/;
+    }
+
+    location /${XUI_WEBPATH}/ {
+        proxy_pass http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 300s;
+    }
+
     location / {
         root /var/www/html;
         index index.html;
@@ -349,7 +365,8 @@ persist_panel_info() {
   mkdir -p "$(dirname "${PANEL_INFO_FILE}")"
   cat >"${PANEL_INFO_FILE}" <<EOF
 3x-ui panel:
-URL: http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}
+URL (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}
+Local URL (HTTP): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}
 Username: ${XUI_USERNAME}
 Password: ${XUI_PASSWORD}
 
@@ -513,7 +530,8 @@ main() {
 
   persist_panel_info
   log "Provisioning completed."
-  log "Panel: http://<server-ip>:${XUI_PORT}/${XUI_WEBPATH}"
+  log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
+  log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
   log "Dest: 127.0.0.1:${SELF_SNI_PORT}; SNI: ${SELF_SNI_DOMAIN}; Xver: 1"
 
   # Keep container alive and fail fast if one of core processes dies.
