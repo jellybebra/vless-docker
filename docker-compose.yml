@@ -91,5 +91,13 @@ services:
       - "traefik.tcp.routers.vless-https.service=vless-https-svc"
       - "traefik.tcp.services.vless-https-svc.loadbalancer.server.port=443"
 
+      # 2. НОВОЕ: Учим Traefik маршрутизировать админку 3x-ui
+      # ВАЖНО: замени домен и путь, если они отличаются
+      - "traefik.http.routers.vless-panel.rule=Host(`example.com`) && PathPrefix(`/panelpath`)"
+      - "traefik.http.routers.vless-panel.entrypoints=fakesite"
+      - "traefik.http.routers.vless-panel.tls=true"
+      - "traefik.http.routers.vless-panel.tls.certresolver=letsencrypt"
+      - "traefik.http.services.vless-panel-svc.loadbalancer.server.port=8080" # Внутренний порт X-UI
+
 volumes:
   fakesite_data:
