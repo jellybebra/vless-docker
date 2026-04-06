@@ -1,5 +1,6 @@
+# Нужно заменить your@email.com, example.com, panelpath
+
 services:
-  # Пока что как dumb pipe
   traefik:
     image: traefik:latest
     restart: unless-stopped
@@ -8,20 +9,18 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      # Открываем ВНУТРЕННИЙ порт 8443, наружу он смотреть не будет
       - "--entrypoints.fakesite.address=:8443"
 
-      # Настраиваем Let's Encrypt (проверка через 80 порт)
+      - "--entrypoints.fakesite.proxyProtocol.insecure=true"
+
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
-      # ВАЖНО: замени на свою реальную почту
       - "--certificatesresolvers.letsencrypt.acme.email=your@email.com"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      # Нужно для того, чтобы Traefik мог читать labels других контейнеров
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./data/traefik_letsencrypt:/letsencrypt
 
@@ -29,7 +28,6 @@ services:
     image: nginx:alpine
     restart: unless-stopped
     volumes:
-      # Используем named volume для хранения файлов сайта
       - fakesite_data:/usr/share/nginx/html
     command:
       - /bin/sh
@@ -48,56 +46,36 @@ services:
         exec nginx -g "daemon off;"
     labels:
       - "traefik.enable=true"
-
-      # 1. Ловим трафик на 80 порту для получения SSL и редиректа на HTTPS
-      # ВАЖНО: замени на свой домен
       - "traefik.http.routers.fakesite-http.rule=Host(`example.com`)"
       - "traefik.http.routers.fakesite-http.entrypoints=web"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
       - "traefik.http.routers.fakesite-http.middlewares=redirect-to-https"
-
-      # 2. Ловим ВНУТРЕННИЙ трафик от Xray на порту 8443 и отдаем сайт по HTTPS
-      # ВАЖНО: замени на свой домен
       - "traefik.http.routers.fakesite-https.rule=Host(`example.com`)"
       - "traefik.http.routers.fakesite-https.entrypoints=fakesite"
       - "traefik.http.routers.fakesite-https.tls=true"
       - "traefik.http.routers.fakesite-https.tls.certresolver=letsencrypt"
-
-      # Направляем трафик внутрь контейнера fakesite на стандартный 80 порт Nginx
       - "traefik.http.services.fakesite-svc.loadbalancer.server.port=80"
 
   vless:
-    image: ghcr.io/jellybebra/vless-docker:latest
+    image: ghcr.io/mhsanaei/3x-ui:latest
     restart: unless-stopped
-
-    environment:
-      XUI_USERNAME: "admin" # логин в панель 3x-ui
-      XUI_PASSWORD: "change_me" # пароль в панель 3x-ui
-      XUI_WEBPATH: "panelpath" # путь панели в URL
-      SELF_SNI_DOMAIN: "example.com" # ваш домен для self-sni
 
     volumes:
       - ./data/xui:/etc/x-ui
-      - ./data/letsencrypt:/etc/letsencrypt
-      - ./data/www:/var/www/html
-      - ./data/cert:/root/cert
 
     labels:
       - "traefik.enable=true"
 
-      # 1. Прокидываем 443 порт (HTTPS / VLESS Reality) как чистый TCP
       - "traefik.tcp.routers.vless-https.rule=HostSNI(`*`)"
       - "traefik.tcp.routers.vless-https.entrypoints=websecure"
       - "traefik.tcp.routers.vless-https.service=vless-https-svc"
       - "traefik.tcp.services.vless-https-svc.loadbalancer.server.port=443"
 
-      # 2. НОВОЕ: Учим Traefik маршрутизировать админку 3x-ui
-      # ВАЖНО: замени домен и путь, если они отличаются
       - "traefik.http.routers.vless-panel.rule=Host(`example.com`) && PathPrefix(`/panelpath`)"
       - "traefik.http.routers.vless-panel.entrypoints=fakesite"
       - "traefik.http.routers.vless-panel.tls=true"
       - "traefik.http.routers.vless-panel.tls.certresolver=letsencrypt"
-      - "traefik.http.services.vless-panel-svc.loadbalancer.server.port=8080" # Внутренний порт X-UI
+      - "traefik.http.services.vless-panel-svc.loadbalancer.server.port=8080"
 
 volumes:
   fakesite_data:
