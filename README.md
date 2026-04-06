@@ -13,6 +13,22 @@
 
     ```yaml
     services:
+      # Пока что как dumb pipe
+      traefik:
+        image: traefik:latest
+        restart: unless-stopped
+        command:
+          - "--providers.docker=true"
+          - "--providers.docker.exposedbydefault=false"
+          - "--entrypoints.web.address=:80"
+          - "--entrypoints.websecure.address=:443"
+        ports:
+          - "80:80"
+          - "443:443"
+        volumes:
+          # Нужно для того, чтобы Traefik мог читать labels других контейнеров
+          - /var/run/docker.sock:/var/run/docker.sock:ro
+   
       vless:
         image: ghcr.io/jellybebra/vless-docker:latest
         restart: unless-stopped
@@ -23,17 +39,27 @@
           XUI_WEBPATH: "panelpath" # путь панели в URL
           SELF_SNI_DOMAIN: "example.com" # ваш домен для self-sni
 
-        ports:
-          - "80:80" # HTTP (редирект на HTTPS)
-          - "443:443" # VLESS Reality
-          # - "8080:8080" # опционально: локальный HTTP-доступ к панели (без TLS)
-
         volumes:
           - ./data/xui:/etc/x-ui
           - ./data/letsencrypt:/etc/letsencrypt
           - ./data/www:/var/www/html
           - ./data/cert:/root/cert
-    ```
+         
+        labels:
+          - "traefik.enable=true"
+         
+          # 1. Прокидываем 443 порт (HTTPS / VLESS Reality) как чистый TCP
+          - "traefik.tcp.routers.vless-https.rule=HostSNI(`*`)"
+          - "traefik.tcp.routers.vless-https.entrypoints=websecure"
+          - "traefik.tcp.routers.vless-https.service=vless-https-svc"
+          - "traefik.tcp.services.vless-https-svc.loadbalancer.server.port=443"
+         
+          # 2. Прокидываем 80 порт (HTTP) как чистый TCP
+          - "traefik.tcp.routers.vless-http.rule=HostSNI(`*`)"
+          - "traefik.tcp.routers.vless-http.entrypoints=web"
+          - "traefik.tcp.routers.vless-http.service=vless-http-svc"
+          - "traefik.tcp.services.vless-http-svc.loadbalancer.server.port=80"
+   ```
 
 2. Запустите:
 
