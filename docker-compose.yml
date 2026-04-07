@@ -55,14 +55,8 @@ services:
       - "traefik.http.services.fakesite-svc.loadbalancer.server.port=80"
 
   vless:
-    image: ghcr.io/jellybebra/vless-docker:latest
+    image: ghcr.io/mhsanaei/3x-ui:latest
     restart: unless-stopped
-
-    environment:
-      XUI_USERNAME: "${XUI_USERNAME}"
-      XUI_PASSWORD: "${XUI_PASSWORD}"
-      XUI_WEBPATH: "${XUI_WEBPATH}"
-      SELF_SNI_DOMAIN: "${SELF_SNI_DOMAIN}"
 
     volumes:
       - ./data/xui:/etc/x-ui

@@ -21,6 +21,7 @@ require_env SELF_SNI_DOMAIN
 XUI_WEBPATH="${XUI_WEBPATH#/}"
 XUI_WEBPATH="${XUI_WEBPATH%/}"
 XUI_PORT="${XUI_PORT:-8080}"
+SELF_SNI_PORT="${SELF_SNI_PORT:-9000}"
 
 if ! [[ "${XUI_PORT}" =~ ^[0-9]+$ ]] || ((XUI_PORT < 1 || XUI_PORT > 65535)); then
   log "ERROR: XUI_PORT must be an integer in range 1..65535"
@@ -55,6 +56,7 @@ EOF
 cleanup() {
   set +e
   pkill -f "/usr/local/x-ui/x-ui" >/dev/null 2>&1 || true
+  nginx -s quit >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
@@ -136,10 +138,10 @@ build_default_client_settings() {
     --arg email "${email}" \
     --arg sub_id "${sub_id}" \
     '{
-      clients:[
+      clients: [
         {
           id: $client_id,
-          flow: "",
+          flow: "xtls-rprx-vision",
           email: $email,
           limitIp: 0,
           totalGB: 0,
@@ -152,7 +154,7 @@ build_default_client_settings() {
         }
       ],
       decryption: "none",
-      fallbacks:[]
+      fallbacks: []
     }'
 }
 
@@ -259,7 +261,7 @@ Password: ${XUI_PASSWORD}
 
 Self-SNI:
 Domain: ${SELF_SNI_DOMAIN}
-Dest (Target): traefik:8443
+Dest (Target): 127.0.0.1:${SELF_SNI_PORT}
 EOF
 }
 
@@ -306,7 +308,7 @@ main() {
     email="client-$(openssl rand -hex 4)"
     sub_id="$(openssl rand -hex 16)"
     settings="$(build_default_client_settings "${client_id}" "${email}" "${sub_id}")"
-    stream="$(build_stream_settings "traefik:8443" "${SELF_SNI_DOMAIN}" 1 "${priv_key}" "${pub_key}" "${short_id}")"
+    stream="$(build_stream_settings "${SELF_SNI_DOMAIN}:443" "${SELF_SNI_DOMAIN}" 0 "${priv_key}" "${pub_key}" "${short_id}")"
     ensure_success "$(panel_add_inbound true "${settings}" "${stream}" "${sniffing}")" "create inbound 443"
     list_resp="$(panel_list_inbounds)"
     ensure_success "${list_resp}" "inbound list after create"
@@ -323,7 +325,7 @@ main() {
     (
       .settings
       | if type == "string" then (try fromjson catch {}) else . end
-      | .clients = ((.clients //[]) | map(.flow = ""))
+      | .clients = ((.clients // []) | map(.flow = "xtls-rprx-vision"))
       | .decryption = "none"
       | .fallbacks = []
     )' <<<"${inbound}")"
@@ -347,7 +349,7 @@ main() {
     priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
     pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
     short_id="$(openssl rand -hex 8)"
-    stream="$(build_stream_settings "traefik:8443" "${SELF_SNI_DOMAIN}" 1 "${priv_key}" "${pub_key}" "${short_id}")"
+    stream="$(build_stream_settings "${SELF_SNI_DOMAIN}:443" "${SELF_SNI_DOMAIN}" 0 "${priv_key}" "${pub_key}" "${short_id}")"
   fi
 
   log "Disabling inbound ${inbound_id} ..."
@@ -356,20 +358,20 @@ main() {
   log "Applying self-sni fields (dest, sni, xver) to inbound ${inbound_id} ..."
   short_id="$(openssl rand -hex 8)"
   stream="$(jq -c \
-    --arg dest "traefik:8443" \
+    --arg dest "127.0.0.1:${SELF_SNI_PORT}" \
     --arg sni "${SELF_SNI_DOMAIN}" \
     --arg sid "${short_id}" \
     '
     .network = (.network // "tcp") |
     .security = (.security // "reality") |
-    .externalProxy = (.externalProxy //[]) |
+    .externalProxy = (.externalProxy // []) |
     .realitySettings = (.realitySettings // {}) |
     .realitySettings.dest = $dest |
     .realitySettings.serverNames = [$sni] |
     .realitySettings.xver = 1 |
     .realitySettings.shortIds =
       (
-        if ((.realitySettings.shortIds //[]) | type) == "array" and ((.realitySettings.shortIds //[]) | length) > 0
+        if ((.realitySettings.shortIds // []) | type) == "array" and ((.realitySettings.shortIds // []) | length) > 0
         then (.realitySettings.shortIds // [])
         else [$sid]
         end
@@ -412,16 +414,7 @@ main() {
   log "Provisioning completed."
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
   log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
-  log "Dest: traefik:8443; SNI: ${SELF_SNI_DOMAIN}; Xver: 1"
-
-  # Не даем контейнеру закрыться, отслеживая процесс панели
-  while true; do
-    if ! pgrep -f "/usr/local/x-ui/x-ui" >/dev/null 2>&1; then
-      log "ERROR: x-ui process stopped"
-      exit 1
-    fi
-    sleep 5
-  done
+  log "Dest: 127.0.0.1:${SELF_SNI_PORT}; SNI: ${SELF_SNI_DOMAIN}; Xver: 1"
 }
 
 main "$@"
