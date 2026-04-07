@@ -1,5 +1,3 @@
-# Нужно заменить your@email.com, example.com, panelpath
-
 services:
   traefik:
     image: traefik:latest
@@ -15,14 +13,14 @@ services:
 
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.letsencrypt.acme.email=your@email.com"
+      - "--certificatesresolvers.letsencrypt.acme.email=${EMAIL}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./data/traefik_letsencrypt:/letsencrypt
+      - traefik_letsencrypt:/letsencrypt
 
   fakesite:
     image: nginx:alpine
@@ -46,11 +44,11 @@ services:
         exec nginx -g "daemon off;"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.fakesite-http.rule=Host(`example.com`)"
+      - "traefik.http.routers.fakesite-http.rule=Host(`${SELF_SNI_DOMAIN}`)"
       - "traefik.http.routers.fakesite-http.entrypoints=web"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
       - "traefik.http.routers.fakesite-http.middlewares=redirect-to-https"
-      - "traefik.http.routers.fakesite-https.rule=Host(`example.com`)"
+      - "traefik.http.routers.fakesite-https.rule=Host(`${SELF_SNI_DOMAIN}`)"
       - "traefik.http.routers.fakesite-https.entrypoints=fakesite"
       - "traefik.http.routers.fakesite-https.tls=true"
       - "traefik.http.routers.fakesite-https.tls.certresolver=letsencrypt"
@@ -71,7 +69,7 @@ services:
       - "traefik.tcp.routers.vless-https.service=vless-https-svc"
       - "traefik.tcp.services.vless-https-svc.loadbalancer.server.port=443"
 
-      - "traefik.http.routers.vless-panel.rule=Host(`example.com`) && PathPrefix(`/panelpath`)"
+      - "traefik.http.routers.vless-panel.rule=Host(`${SELF_SNI_DOMAIN}`) && PathPrefix(`/${XUI_WEBPATH}`)"
       - "traefik.http.routers.vless-panel.entrypoints=fakesite"
       - "traefik.http.routers.vless-panel.tls=true"
       - "traefik.http.routers.vless-panel.tls.certresolver=letsencrypt"
@@ -79,3 +77,4 @@ services:
 
 volumes:
   fakesite_data:
+  traefik_letsencrypt:
