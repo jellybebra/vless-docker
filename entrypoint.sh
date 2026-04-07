@@ -249,117 +249,6 @@ panel_update_inbound() {
     --data-urlencode "sniffing=${sniffing}"
 }
 
-install_fake_site() {
-  local temp_dir selected
-  temp_dir="$(mktemp -d)"
-  log "Downloading fake website templates ..."
-  git clone --depth=1 https://github.com/learning-zone/website-templates.git "${temp_dir}" >/dev/null 2>&1
-  selected="$(find "${temp_dir}" -mindepth 1 -maxdepth 1 -type d | shuf -n 1)"
-  rm -rf /var/www/html/*
-  cp -a "${selected}/." /var/www/html/
-  rm -rf "${temp_dir}"
-}
-
-write_nginx_challenge_config() {
-  cat >/etc/nginx/sites-available/sni.conf <<EOF
-server {
-    listen 80;
-    server_name ${SELF_SNI_DOMAIN};
-
-    root /var/www/html;
-    index index.html;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-}
-EOF
-  ln -sf /etc/nginx/sites-available/sni.conf /etc/nginx/sites-enabled/sni.conf
-  rm -f /etc/nginx/sites-enabled/default
-}
-
-write_nginx_final_config() {
-  cat >/etc/nginx/sites-available/sni.conf <<EOF
-server {
-    listen 80;
-    server_name ${SELF_SNI_DOMAIN};
-
-    if (\$host = ${SELF_SNI_DOMAIN}) {
-        return 301 https://\$host\$request_uri;
-    }
-
-    return 404;
-}
-
-server {
-    listen 127.0.0.1:${SELF_SNI_PORT} ssl http2 proxy_protocol;
-    server_name ${SELF_SNI_DOMAIN};
-
-    ssl_certificate /etc/letsencrypt/live/${SELF_SNI_DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${SELF_SNI_DOMAIN}/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384";
-
-    ssl_stapling on;
-    ssl_stapling_verify on;
-
-    resolver 8.8.8.8 8.8.4.4 valid=300s;
-    resolver_timeout 5s;
-
-    real_ip_header proxy_protocol;
-    set_real_ip_from 127.0.0.1;
-
-    location = /${XUI_WEBPATH} {
-        return 301 /${XUI_WEBPATH}/;
-    }
-
-    location /${XUI_WEBPATH}/ {
-        proxy_pass http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}/;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 300s;
-    }
-
-    location / {
-        root /var/www/html;
-        index index.html;
-    }
-}
-EOF
-  ln -sf /etc/nginx/sites-available/sni.conf /etc/nginx/sites-enabled/sni.conf
-  rm -f /etc/nginx/sites-enabled/default
-}
-
-start_or_reload_nginx() {
-  nginx -t
-  # Prefer reload; if nginx is not started yet, fallback to start.
-  if ! nginx -s reload >/dev/null 2>&1; then
-    nginx
-  fi
-}
-
-issue_certificate() {
-  log "Requesting certificate for ${SELF_SNI_DOMAIN} ..."
-  certbot certonly \
-    --non-interactive \
-    --agree-tos \
-    --register-unsafely-without-email \
-    --keep-until-expiring \
-    --webroot \
-    -w /var/www/html \
-    -d "${SELF_SNI_DOMAIN}"
-}
 
 persist_panel_info() {
   mkdir -p "$(dirname "${PANEL_INFO_FILE}")"
@@ -466,13 +355,6 @@ main() {
   log "Disabling inbound ${inbound_id} ..."
   ensure_success "$(panel_update_inbound "${inbound_id}" false "${settings}" "${stream}" "${sniffing}")" "disable inbound"
 
-  write_nginx_challenge_config
-  start_or_reload_nginx
-  issue_certificate
-  install_fake_site
-  write_nginx_final_config
-  start_or_reload_nginx
-
   log "Applying self-sni fields (dest, sni, xver) to inbound ${inbound_id} ..."
   short_id="$(openssl rand -hex 8)"
   stream="$(jq -c \
@@ -533,19 +415,6 @@ main() {
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
   log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
   log "Dest: 127.0.0.1:${SELF_SNI_PORT}; SNI: ${SELF_SNI_DOMAIN}; Xver: 1"
-
-  # Keep container alive and fail fast if one of core processes dies.
-  while true; do
-    if ! curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time 5 -sS -o /dev/null "${BASE_URL}/"; then
-      log "ERROR: x-ui panel is not reachable"
-      exit 1
-    fi
-    if ! pgrep nginx >/dev/null 2>&1; then
-      log "ERROR: nginx process stopped"
-      exit 1
-    fi
-    sleep 5
-  done
 }
 
 main "$@"
