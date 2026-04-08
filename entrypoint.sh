@@ -307,6 +307,67 @@ panel_update_inbound() {
   api_post "/panel/inbound/update/${inbound_id}" "${payload[@]}"
 }
 
+normalize_path_with_slashes() {
+  local p="${1:-}"
+  [[ -n "${p}" ]] || p="/"
+  [[ "${p}" == /* ]] || p="/${p}"
+  [[ "${p}" == */ ]] || p="${p}/"
+  printf '%s\n' "${p}"
+}
+
+panel_get_settings() {
+  api_post "/panel/setting/all"
+}
+
+panel_update_settings() {
+  local settings_json="$1"
+  api_post "/panel/setting/update" \
+    -H "Content-Type: application/json" \
+    -d "${settings_json}"
+}
+
+ensure_subscription_urls() {
+  local settings_resp settings_obj update_resp
+  local desired_sub_path desired_sub_uri desired_subjson_path desired_subjson_uri
+
+  desired_sub_path="$(normalize_path_with_slashes "${SUB_PATH:-/sub/}")"
+  desired_sub_uri="${SUB_REVERSE_PROXY_URI:-https://${SELF_SNI_DOMAIN}${desired_sub_path}}"
+  [[ "${desired_sub_uri}" == */ ]] || desired_sub_uri="${desired_sub_uri}/"
+
+  desired_subjson_path="$(normalize_path_with_slashes "${SUB_JSON_PATH:-/json/}")"
+  desired_subjson_uri="${SUB_JSON_REVERSE_PROXY_URI:-https://${SELF_SNI_DOMAIN}${desired_subjson_path}}"
+  [[ "${desired_subjson_uri}" == */ ]] || desired_subjson_uri="${desired_subjson_uri}/"
+
+  log "Loading current panel settings ..."
+  settings_resp="$(panel_get_settings || true)"
+  ensure_success "${settings_resp}" "get panel settings"
+
+  settings_obj="$(jq -c '.obj' <<<"${settings_resp}")"
+
+  log "Applying subscription URLs ..."
+  settings_obj="$(
+    jq -c \
+      --arg sub_domain "${SELF_SNI_DOMAIN}" \
+      --arg sub_path "${desired_sub_path}" \
+      --arg sub_uri "${desired_sub_uri}" \
+      --arg subjson_path "${desired_subjson_path}" \
+      --arg subjson_uri "${desired_subjson_uri}" \
+      '
+      .subDomain   = $sub_domain   |
+      .subPath     = $sub_path     |
+      .subURI      = $sub_uri      |
+      .subJsonPath = $subjson_path |
+      .subJsonURI  = $subjson_uri
+      ' <<<"${settings_obj}"
+  )"
+
+  update_resp="$(panel_update_settings "${settings_obj}" || true)"
+  ensure_success "${update_resp}" "update subscription URLs"
+
+  log "Subscription Reverse Proxy URI: ${desired_sub_uri}"
+  log "Subscription JSON Reverse Proxy URI: ${desired_subjson_uri}"
+}
+
 main() {
   cd "${XUI_HOME}"
 
@@ -334,6 +395,7 @@ main() {
   wait_for_panel
   log "Panel is reachable."
   login_panel
+  ensure_subscription_urls
 
   local list_resp inbound inbound_id settings stream sniffing
   local keys_resp priv_key pub_key short_id client_id email sub_id
