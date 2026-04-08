@@ -30,7 +30,6 @@
 - создаст или обновит inbound на `443`
 - выставит `dest` в `traefik:8443` и `serverNames` в `SELF_SNI_DOMAIN`
 - поставит `xver=1`
-- очистит `flow` у существующих клиентов
 
 ## Бэкап
 ```bash
