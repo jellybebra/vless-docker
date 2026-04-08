@@ -30,7 +30,6 @@ fi
 
 BASE_URL="http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
 COOKIE_JAR="/tmp/xui_cookie.jar"
-PANEL_INFO_FILE="/etc/x-ui/3x-ui.txt"
 
 readonly CURL_CONNECT_TIMEOUT=3
 readonly CURL_MAX_TIME=15
@@ -249,22 +248,6 @@ panel_update_inbound() {
     --data-urlencode "sniffing=${sniffing}"
 }
 
-
-persist_panel_info() {
-  mkdir -p "$(dirname "${PANEL_INFO_FILE}")"
-  cat >"${PANEL_INFO_FILE}" <<EOF
-3x-ui panel:
-URL (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}
-Local URL (HTTP): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}
-Username: ${XUI_USERNAME}
-Password: ${XUI_PASSWORD}
-
-Self-SNI:
-Domain: ${SELF_SNI_DOMAIN}
-Dest (Target): 127.0.0.1:${SELF_SNI_PORT}
-EOF
-}
-
 main() {
   cd /usr/local/x-ui
 
@@ -410,7 +393,6 @@ main() {
   log "Saving inbound update and enabling inbound back ..."
   ensure_success "$(panel_update_inbound "${inbound_id}" true "${settings}" "${stream}" "${sniffing}")" "enable inbound with self-sni settings"
 
-  persist_panel_info
   log "Provisioning completed."
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
   log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
