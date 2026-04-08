@@ -23,7 +23,6 @@ XUI_WEBPATH="${XUI_WEBPATH%/}"
 XUI_PORT="${XUI_PORT:-8080}"
 REALITY_DEST="${REALITY_DEST:-traefik:8443}"
 REALITY_XVER="${REALITY_XVER:-1}"
-DEFAULT_CLIENT_FLOW="${DEFAULT_CLIENT_FLOW:-}"
 XUI_HOME="${XUI_HOME:-/app}"
 
 if [[ ! -x "${XUI_HOME}/x-ui" && -x "/usr/local/x-ui/x-ui" ]]; then
@@ -176,12 +175,10 @@ build_default_client_settings() {
     --arg client_id "${client_id}" \
     --arg email "${email}" \
     --arg sub_id "${sub_id}" \
-    --arg flow "${DEFAULT_CLIENT_FLOW}" \
     '{
       clients: [
         {
           id: $client_id,
-          flow: $flow,
           email: $email,
           limitIp: 0,
           totalGB: 0,
@@ -494,11 +491,10 @@ main() {
   fi
 
   inbound_id="$(jq -r '.id' <<<"${inbound}")"
-  settings="$(jq -c --arg flow "${DEFAULT_CLIENT_FLOW}" '
+  settings="$(jq -c '
     (
       .settings
       | if type == "string" then (try fromjson catch {}) else . end
-      | .clients = ((.clients // []) | map(.flow = $flow))
       | .decryption = "none"
       | .fallbacks = []
     )' <<<"${inbound}")"
@@ -587,7 +583,7 @@ main() {
   log "Provisioning completed."
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
   log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
-  log "Dest: ${REALITY_DEST}; SNI: ${SELF_SNI_DOMAIN}; Xver: ${REALITY_XVER}; Flow: ${DEFAULT_CLIENT_FLOW:-<empty>}"
+  log "Dest: ${REALITY_DEST}; SNI: ${SELF_SNI_DOMAIN}; Xver: ${REALITY_XVER}"
 
   wait "${xui_pid}"
 }
