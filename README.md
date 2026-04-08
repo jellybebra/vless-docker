@@ -1,11 +1,10 @@
 # vless-docker
 
-`3x-ui` + `self-sni` через `docker compose`
+`3x-ui` + `traefik` через `docker compose`
 
 ## Требования
 
 - У домена в `SELF_SNI_DOMAIN` должна быть A-запись на IP сервера без проксирования
-
 
 ## Как пользоваться
 
@@ -24,3 +23,11 @@
     ```text
     https://<SELF_SNI_DOMAIN>/<XUI_WEBPATH>
     ```
+
+При первом старте контейнер `vless` сам:
+
+- применит логин, пароль и `web path` для `3x-ui`
+- создаст или обновит inbound на `443`
+- выставит `dest` в `traefik:8443` и `serverNames` в `SELF_SNI_DOMAIN`
+- поставит `xver=1`
+- очистит `flow` у существующих клиентов

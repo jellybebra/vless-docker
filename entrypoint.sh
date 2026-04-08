@@ -21,15 +21,28 @@ require_env SELF_SNI_DOMAIN
 XUI_WEBPATH="${XUI_WEBPATH#/}"
 XUI_WEBPATH="${XUI_WEBPATH%/}"
 XUI_PORT="${XUI_PORT:-8080}"
-SELF_SNI_PORT="${SELF_SNI_PORT:-9000}"
+REALITY_DEST="${REALITY_DEST:-traefik:8443}"
+REALITY_XVER="${REALITY_XVER:-1}"
+DEFAULT_CLIENT_FLOW="${DEFAULT_CLIENT_FLOW:-}"
+XUI_HOME="${XUI_HOME:-/app}"
+
+if [[ ! -x "${XUI_HOME}/x-ui" && -x "/usr/local/x-ui/x-ui" ]]; then
+  XUI_HOME="/usr/local/x-ui"
+fi
 
 if ! [[ "${XUI_PORT}" =~ ^[0-9]+$ ]] || ((XUI_PORT < 1 || XUI_PORT > 65535)); then
   log "ERROR: XUI_PORT must be an integer in range 1..65535"
   exit 1
 fi
 
+if ! [[ "${REALITY_XVER}" =~ ^[0-9]+$ ]]; then
+  log "ERROR: REALITY_XVER must be a non-negative integer"
+  exit 1
+fi
+
 BASE_URL="http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
 COOKIE_JAR="/tmp/xui_cookie.jar"
+xui_pid=""
 
 readonly CURL_CONNECT_TIMEOUT=3
 readonly CURL_MAX_TIME=15
@@ -54,8 +67,11 @@ EOF
 
 cleanup() {
   set +e
-  pkill -f "/usr/local/x-ui/x-ui" >/dev/null 2>&1 || true
-  nginx -s quit >/dev/null 2>&1 || true
+  if [[ -n "${xui_pid}" ]]; then
+    kill "${xui_pid}" >/dev/null 2>&1 || true
+  else
+    pkill -f "${XUI_HOME}/x-ui" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -136,11 +152,12 @@ build_default_client_settings() {
     --arg client_id "${client_id}" \
     --arg email "${email}" \
     --arg sub_id "${sub_id}" \
+    --arg flow "${DEFAULT_CLIENT_FLOW}" \
     '{
       clients: [
         {
           id: $client_id,
-          flow: "xtls-rprx-vision",
+          flow: $flow,
           email: $email,
           limitIp: 0,
           totalGB: 0,
@@ -249,11 +266,15 @@ panel_update_inbound() {
 }
 
 main() {
-  cd /usr/local/x-ui
+  cd "${XUI_HOME}"
 
   if [[ ! -x "./x-ui" || ! -x "./bin/xray-linux-amd64" ]]; then
-    log "ERROR: x-ui binaries are missing or not executable in /usr/local/x-ui"
+    log "ERROR: x-ui binaries are missing or not executable in ${XUI_HOME}"
     exit 1
+  fi
+
+  if [[ "${XUI_ENABLE_FAIL2BAN:-true}" == "true" ]]; then
+    fail2ban-client -x start >/dev/null 2>&1 || true
   fi
 
   log "Applying x-ui settings (port ${XUI_PORT}, HTTP, custom credentials/path) ..."
@@ -266,6 +287,7 @@ main() {
 
   log "Starting x-ui ..."
   ./x-ui &
+  xui_pid="$!"
 
   wait_for_panel
   log "Panel is reachable."
@@ -291,7 +313,7 @@ main() {
     email="client-$(openssl rand -hex 4)"
     sub_id="$(openssl rand -hex 16)"
     settings="$(build_default_client_settings "${client_id}" "${email}" "${sub_id}")"
-    stream="$(build_stream_settings "${SELF_SNI_DOMAIN}:443" "${SELF_SNI_DOMAIN}" 0 "${priv_key}" "${pub_key}" "${short_id}")"
+    stream="$(build_stream_settings "${REALITY_DEST}" "${SELF_SNI_DOMAIN}" "${REALITY_XVER}" "${priv_key}" "${pub_key}" "${short_id}")"
     ensure_success "$(panel_add_inbound true "${settings}" "${stream}" "${sniffing}")" "create inbound 443"
     list_resp="$(panel_list_inbounds)"
     ensure_success "${list_resp}" "inbound list after create"
@@ -304,11 +326,11 @@ main() {
   fi
 
   inbound_id="$(jq -r '.id' <<<"${inbound}")"
-  settings="$(jq -c '
+  settings="$(jq -c --arg flow "${DEFAULT_CLIENT_FLOW}" '
     (
       .settings
       | if type == "string" then (try fromjson catch {}) else . end
-      | .clients = ((.clients // []) | map(.flow = "xtls-rprx-vision"))
+      | .clients = ((.clients // []) | map(.flow = $flow))
       | .decryption = "none"
       | .fallbacks = []
     )' <<<"${inbound}")"
@@ -332,18 +354,19 @@ main() {
     priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
     pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
     short_id="$(openssl rand -hex 8)"
-    stream="$(build_stream_settings "${SELF_SNI_DOMAIN}:443" "${SELF_SNI_DOMAIN}" 0 "${priv_key}" "${pub_key}" "${short_id}")"
+    stream="$(build_stream_settings "${REALITY_DEST}" "${SELF_SNI_DOMAIN}" "${REALITY_XVER}" "${priv_key}" "${pub_key}" "${short_id}")"
   fi
 
   log "Saving current inbound settings for ${inbound_id} without disabling it ..."
   ensure_success "$(panel_update_inbound "${inbound_id}" true "${settings}" "${stream}" "${sniffing}")" "save inbound settings"
 
-  log "Applying self-sni fields (dest, sni, xver) to inbound ${inbound_id} ..."
+  log "Applying Reality fields (dest, sni, xver) to inbound ${inbound_id} ..."
   short_id="$(openssl rand -hex 8)"
   stream="$(jq -c \
-    --arg dest "127.0.0.1:${SELF_SNI_PORT}" \
+    --arg dest "${REALITY_DEST}" \
     --arg sni "${SELF_SNI_DOMAIN}" \
     --arg sid "${short_id}" \
+    --argjson xver "${REALITY_XVER}" \
     '
     .network = (.network // "tcp") |
     .security = (.security // "reality") |
@@ -351,7 +374,7 @@ main() {
     .realitySettings = (.realitySettings // {}) |
     .realitySettings.dest = $dest |
     .realitySettings.serverNames = [$sni] |
-    .realitySettings.xver = 1 |
+    .realitySettings.xver = $xver |
     .realitySettings.shortIds =
       (
         if ((.realitySettings.shortIds // []) | type) == "array" and ((.realitySettings.shortIds // []) | length) > 0
@@ -396,7 +419,9 @@ main() {
   log "Provisioning completed."
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
   log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
-  log "Dest: 127.0.0.1:${SELF_SNI_PORT}; SNI: ${SELF_SNI_DOMAIN}; Xver: 1"
+  log "Dest: ${REALITY_DEST}; SNI: ${SELF_SNI_DOMAIN}; Xver: ${REALITY_XVER}; Flow: ${DEFAULT_CLIENT_FLOW:-<empty>}"
+
+  wait "${xui_pid}"
 }
 
 main "$@"
