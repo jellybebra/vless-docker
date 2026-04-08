@@ -54,7 +54,8 @@ EOF
 
 cleanup() {
   set +e
-  pkill -f "x-ui" >/dev/null 2>&1 || true
+  pkill -f "/usr/local/x-ui/x-ui" >/dev/null 2>&1 || true
+  nginx -s quit >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
@@ -139,7 +140,7 @@ build_default_client_settings() {
       clients: [
         {
           id: $client_id,
-          flow: "",
+          flow: "xtls-rprx-vision",
           email: $email,
           limitIp: 0,
           totalGB: 0,
@@ -248,10 +249,10 @@ panel_update_inbound() {
 }
 
 main() {
-  cd /app
+  cd /usr/local/x-ui
 
-  if [[ ! -x "./x-ui" ]]; then
-    log "ERROR: x-ui binary is missing or not executable in /app"
+  if [[ ! -x "./x-ui" || ! -x "./bin/xray-linux-amd64" ]]; then
+    log "ERROR: x-ui binaries are missing or not executable in /usr/local/x-ui"
     exit 1
   fi
 
@@ -307,7 +308,7 @@ main() {
     (
       .settings
       | if type == "string" then (try fromjson catch {}) else . end
-      | .clients = ((.clients // []) | map(.flow = ""))
+      | .clients = ((.clients // []) | map(.flow = "xtls-rprx-vision"))
       | .decryption = "none"
       | .fallbacks = []
     )' <<<"${inbound}")"
@@ -340,7 +341,7 @@ main() {
   log "Applying self-sni fields (dest, sni, xver) to inbound ${inbound_id} ..."
   short_id="$(openssl rand -hex 8)"
   stream="$(jq -c \
-    --arg dest "traefik:8443" \
+    --arg dest "127.0.0.1:${SELF_SNI_PORT}" \
     --arg sni "${SELF_SNI_DOMAIN}" \
     --arg sid "${short_id}" \
     '
@@ -395,10 +396,7 @@ main() {
   log "Provisioning completed."
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
   log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
-  log "Dest: traefik:8443; SNI: ${SELF_SNI_DOMAIN}; Xver: 1"
-
-  # Keep container alive by waiting for x-ui background process
-  wait -n
+  log "Dest: 127.0.0.1:${SELF_SNI_PORT}; SNI: ${SELF_SNI_DOMAIN}; Xver: 1"
 }
 
 main "$@"
