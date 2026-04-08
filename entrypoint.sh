@@ -335,8 +335,8 @@ main() {
     stream="$(build_stream_settings "${SELF_SNI_DOMAIN}:443" "${SELF_SNI_DOMAIN}" 0 "${priv_key}" "${pub_key}" "${short_id}")"
   fi
 
-  log "Disabling inbound ${inbound_id} ..."
-  ensure_success "$(panel_update_inbound "${inbound_id}" false "${settings}" "${stream}" "${sniffing}")" "disable inbound"
+  log "Saving current inbound settings for ${inbound_id} without disabling it ..."
+  ensure_success "$(panel_update_inbound "${inbound_id}" true "${settings}" "${stream}" "${sniffing}")" "save inbound settings"
 
   log "Applying self-sni fields (dest, sni, xver) to inbound ${inbound_id} ..."
   short_id="$(openssl rand -hex 8)"
@@ -365,7 +365,7 @@ main() {
     .realitySettings.settings.spiderX = (.realitySettings.settings.spiderX // "/") |
     .tcpSettings = (.tcpSettings // {"acceptProxyProtocol": false, "header": {"type": "none"}})
     ' <<<"${stream}")"
-  ensure_success "$(panel_update_inbound "${inbound_id}" false "${settings}" "${stream}" "${sniffing}")" "apply dest/sni/xver"
+  ensure_success "$(panel_update_inbound "${inbound_id}" true "${settings}" "${stream}" "${sniffing}")" "apply dest/sni/xver"
 
   priv_key="$(jq -r '.realitySettings.privateKey // empty' <<<"${stream}")"
   pub_key="$(jq -r '.realitySettings.settings.publicKey // empty' <<<"${stream}")"
