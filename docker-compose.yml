@@ -79,7 +79,18 @@ services:
       - "traefik.http.routers.vless-panel.entrypoints=fakesite"
       - "traefik.http.routers.vless-panel.tls=true"
       - "traefik.http.routers.vless-panel.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.vless-panel.priority=200"
+      - "traefik.http.routers.vless-panel.service=vless-panel-svc"
+
+      - "traefik.http.routers.vless-sub.rule=Host(`${SELF_SNI_DOMAIN}`) && PathPrefix(`/sub/`)"
+      - "traefik.http.routers.vless-sub.entrypoints=fakesite"
+      - "traefik.http.routers.vless-sub.tls=true"
+      - "traefik.http.routers.vless-sub.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.vless-sub.priority=190"
+      - "traefik.http.routers.vless-sub.service=vless-sub-svc"
+
       - "traefik.http.services.vless-panel-svc.loadbalancer.server.port=8080"
+      - "traefik.http.services.vless-sub-svc.loadbalancer.server.port=2096"
 
 volumes:
   fakesite_data:
