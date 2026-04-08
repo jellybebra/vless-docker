@@ -326,6 +326,69 @@ panel_update_settings() {
     -d "${settings_json}"
 }
 
+panel_get_xray_setting() {
+  api_post "/panel/xray/"
+}
+
+panel_update_xray_setting() {
+  local xray_setting_json="$1"
+  local outbound_test_url="$2"
+  api_post "/panel/xray/update" \
+    --data-urlencode "xraySetting=${xray_setting_json}" \
+    --data-urlencode "outboundTestUrl=${outbound_test_url}"
+}
+
+ensure_geoip_ru_block_rule() {
+  local xray_resp xray_payload xray_setting outbound_test_url normalized_current normalized_updated update_resp
+
+  log "Loading current Xray template settings ..."
+  xray_resp="$(panel_get_xray_setting || true)"
+  ensure_success "${xray_resp}" "get Xray settings"
+
+  xray_payload="$(jq -c '.obj | fromjson' <<<"${xray_resp}")"
+  xray_setting="$(jq -c '.xraySetting' <<<"${xray_payload}")"
+  outbound_test_url="$(jq -r '.outboundTestUrl // "https://www.google.com/generate_204"' <<<"${xray_payload}")"
+
+  normalized_current="$(jq -cS '.' <<<"${xray_setting}")"
+  normalized_updated="$(
+    jq -cS '
+      .outbounds = (.outbounds // []) |
+      .routing = (.routing // {}) |
+      .routing.rules = (.routing.rules // []) |
+      ([.outbounds[]? | select(.protocol == "blackhole" and ((.tag // "") != "")) | .tag] | unique) as $block_tags |
+      ($block_tags[0] // "blocked") as $block_tag |
+      .outbounds |= (
+        if ($block_tags | length) == 0 then
+          . + [{tag: $block_tag, protocol: "blackhole", settings: {}}]
+        else
+          .
+        end
+      ) |
+      .routing.rules |= (
+        if any(
+          .[]?;
+          (.type // "") == "field" and
+          ((.outboundTag // "") as $tag | (($block_tags + [$block_tag]) | index($tag)) != null) and
+          any((.ip // [])[]?; . == "geoip:ru")
+        ) then
+          .
+        else
+          [{type: "field", outboundTag: $block_tag, ip: ["geoip:ru"]}] + .
+        end
+      )
+    ' <<<"${xray_setting}"
+  )"
+
+  if [[ "${normalized_updated}" == "${normalized_current}" ]]; then
+    log "Xray routing rule for geoip:ru already exists."
+    return 0
+  fi
+
+  log "Applying Xray routing rule: block outbound traffic to geoip:ru ..."
+  update_resp="$(panel_update_xray_setting "${normalized_updated}" "${outbound_test_url}" || true)"
+  ensure_success "${update_resp}" "update Xray settings"
+}
+
 ensure_subscription_urls() {
   local settings_resp settings_obj update_resp
   local desired_sub_path desired_sub_uri desired_subjson_path desired_subjson_uri
@@ -396,6 +459,7 @@ main() {
   log "Panel is reachable."
   login_panel
   ensure_subscription_urls
+  ensure_geoip_ru_block_rule
 
   local list_resp inbound inbound_id settings stream sniffing
   local keys_resp priv_key pub_key short_id client_id email sub_id
