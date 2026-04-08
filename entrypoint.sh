@@ -125,11 +125,35 @@ api_post() {
   curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" -X POST "${BASE_URL}${endpoint}" "$@"
 }
 
+api_get() {
+  local endpoint="$1"
+  shift || true
+  log "API GET ${endpoint}" >&2
+  curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" "${BASE_URL}${endpoint}" "$@"
+}
+
+response_is_success() {
+  local resp="${1:-}"
+  [[ -n "${resp}" ]] && jq -e '.success == true' >/dev/null 2>&1 <<<"${resp}"
+}
+
 panel_list_inbounds() {
+  local resp
+  resp="$(api_get "/panel/api/inbounds/list" || true)"
+  if response_is_success "${resp}"; then
+    printf '%s\n' "${resp}"
+    return 0
+  fi
   api_post "/panel/inbound/list"
 }
 
 panel_get_new_x25519() {
+  local resp
+  resp="$(api_get "/panel/api/inbounds/getNewX25519Cert" || true)"
+  if response_is_success "${resp}"; then
+    printf '%s\n' "${resp}"
+    return 0
+  fi
   api_post "/server/getNewX25519Cert" \
     -H "Content-Type: application/x-www-form-urlencoded; charset=UTF-8" \
     -H "X-Requested-With: XMLHttpRequest"
@@ -227,8 +251,7 @@ panel_add_inbound() {
   local settings="$2"
   local stream_settings="$3"
   local sniffing="$4"
-
-  api_post "/panel/inbound/add" \
+  local payload=(
     --data-urlencode "up=0" \
     --data-urlencode "down=0" \
     --data-urlencode "total=0" \
@@ -241,6 +264,16 @@ panel_add_inbound() {
     --data-urlencode "settings=${settings}" \
     --data-urlencode "streamSettings=${stream_settings}" \
     --data-urlencode "sniffing=${sniffing}"
+  )
+  local resp
+
+  resp="$(api_post "/panel/api/inbounds/add" "${payload[@]}" || true)"
+  if response_is_success "${resp}"; then
+    printf '%s\n' "${resp}"
+    return 0
+  fi
+
+  api_post "/panel/inbound/add" "${payload[@]}"
 }
 
 panel_update_inbound() {
@@ -249,8 +282,7 @@ panel_update_inbound() {
   local settings="$3"
   local stream_settings="$4"
   local sniffing="$5"
-
-  api_post "/panel/inbound/update/${inbound_id}" \
+  local payload=(
     --data-urlencode "up=0" \
     --data-urlencode "down=0" \
     --data-urlencode "total=0" \
@@ -263,6 +295,16 @@ panel_update_inbound() {
     --data-urlencode "settings=${settings}" \
     --data-urlencode "streamSettings=${stream_settings}" \
     --data-urlencode "sniffing=${sniffing}"
+  )
+  local resp
+
+  resp="$(api_post "/panel/api/inbounds/update/${inbound_id}" "${payload[@]}" || true)"
+  if response_is_success "${resp}"; then
+    printf '%s\n' "${resp}"
+    return 0
+  fi
+
+  api_post "/panel/inbound/update/${inbound_id}" "${payload[@]}"
 }
 
 main() {
