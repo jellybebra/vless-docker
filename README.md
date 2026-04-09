@@ -52,3 +52,27 @@ cp -a data/xui_backupN data/xui
 docker compose up -d
 ```
 
+## WARP
+
+1. Откройте **3x-ui** → **Xray Settings** → **Outbounds**.
+   Нажмите **WARP** → **Create**.
+   Если панель не добавила outbound автоматически, добавьте outbound вручную с тегом `warp`.
+
+2. Откройте **Xray Settings** → **Routing Rules** и добавьте правило для всего трафика:
+
+   ```
+   Network      = tcp,udp
+   Outbound Tag = warp
+   ```
+
+3. Сделай порядок правил таким:
+   
+   ```
+   1. api -> api
+   2. geoip:ru -> blocked
+   3. geoip:private -> blocked
+   4. bittorrent -> blocked
+   5. TCP,UDP -> warp
+   ```
+
+4. Сохрани и перезагрузи
