@@ -148,14 +148,13 @@ panel_list_inbounds() {
 
 panel_get_new_x25519() {
   local resp
-  resp="$(api_get "/panel/api/inbounds/getNewX25519Cert" || true)"
+  resp="$(api_get "/panel/api/server/getNewX25519Cert" || true)"
   if response_is_success "${resp}"; then
     printf '%s\n' "${resp}"
     return 0
   fi
-  api_post "/server/getNewX25519Cert" \
-    -H "Content-Type: application/x-www-form-urlencoded; charset=UTF-8" \
-    -H "X-Requested-With: XMLHttpRequest"
+  printf '%s\n' "${resp}"
+  return 1
 }
 
 ensure_success() {
