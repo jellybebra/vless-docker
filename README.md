@@ -15,6 +15,8 @@
 3. Запустите:
 
     ```bash
+    docker network create traefik-public
+    docker compose pull
     docker compose up -d
     ```
 
@@ -23,13 +25,6 @@
     ```text
     https://<SELF_SNI_DOMAIN>/<XUI_WEBPATH>
     ```
-
-При первом старте контейнер `vless` сам:
-
-- применит логин, пароль и `web path` для `3x-ui`
-- создаст или обновит inbound на `443`
-- выставит `dest` в `traefik:8443` и `serverNames` в `SELF_SNI_DOMAIN`
-- поставит `xver=1`
 
 ## Бэкап
 ```bash
@@ -57,6 +52,8 @@ docker compose up -d
 1. Откройте **3x-ui** → **Xray Settings** → **Outbounds**.
    Нажмите **WARP** → **Create**.
    Если панель не добавила outbound автоматически, добавьте outbound вручную с тегом `warp`.
+   
+   Заодно надо заменить `engage.cloudflareclient.com:2408` на `162.159.192.1:2408`
 
 2. Откройте **Xray Settings** → **Routing Rules** и добавьте правило для всего трафика:
 
@@ -76,3 +73,19 @@ docker compose up -d
    ```
 
 4. Сохрани и перезагрузи
+
+## Получение CF_DNS_API_TOKEN
+
+1. https://dash.cloudflare.com/profile/api-tokens
+2. Create token
+3. Custom token
+4. Name
+
+   let's encrypt
+
+5. Permissions
+   - `Zone / Zone / Read`
+   - `Zone / DNS / Edit`
+6. `Zone Resources`:
+   - `Include` → `Specific zone` → `example.com`
+7. Continue
