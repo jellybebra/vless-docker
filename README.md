@@ -2,13 +2,32 @@
 
 `3x-ui` + `traefik` через `docker compose`
 
-## Требования
+## Как пользоваться
+
+### 0. Купить и настроить домен
 
 - У домена в `SELF_SNI_DOMAIN` должна быть A-запись на IP сервера без проксирования
 
-## Как пользоваться
 
-1. Создайте файл [docker-compose.yml](docker-compose.yml), заменив значения
+### 1. Получение CF_DNS_API_TOKEN
+
+1. https://dash.cloudflare.com/profile/api-tokens
+2. Create token
+3. Custom token
+4. Name
+
+   let's encrypt
+
+5. Permissions
+   - `Zone / Zone / Read`
+   - `Zone / DNS / Edit`
+6. `Zone Resources`:
+   - `Include` → `Specific zone` → `example.com`
+7. Continue
+
+### 2. Traefik
+
+1. Создайте файл [traefik.yml](traefik.yml) в папке `/opt/traefik`
 
 2. Создайте .env файл по примеру [.env.example](.env.example)
 
@@ -16,6 +35,19 @@
 
     ```bash
     docker network create traefik-public
+    docker compose -f traefik.yml pull
+    docker compose up -d
+    ```
+
+### 3. Vless
+
+1. Создайте файл [docker-compose.yml](docker-compose.yml) в папке `/opt/vless`
+
+2. Создайте .env файл по примеру [.env.example](.env.example)
+
+3. Запустите:
+
+    ```bash
     docker compose pull
     docker compose up -d
     ```
@@ -73,19 +105,3 @@ docker compose up -d
    ```
 
 4. Сохрани и перезагрузи
-
-## Получение CF_DNS_API_TOKEN
-
-1. https://dash.cloudflare.com/profile/api-tokens
-2. Create token
-3. Custom token
-4. Name
-
-   let's encrypt
-
-5. Permissions
-   - `Zone / Zone / Read`
-   - `Zone / DNS / Edit`
-6. `Zone Resources`:
-   - `Include` → `Specific zone` → `example.com`
-7. Continue
