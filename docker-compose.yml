@@ -8,13 +8,15 @@ services:
       - /bin/sh
       - -c
       - |
-        if [ ! -f /usr/share/nginx/html/index.html ]; then
+        if [ ! -f /usr/share/nginx/html/.site-installed ]; then
           echo "Downloading fake website templates..."
+          rm -rf /usr/share/nginx/html/*
           apk add --no-cache git coreutils >/dev/null 2>&1
           temp_dir=$$(mktemp -d)
           git clone --depth=1 https://github.com/learning-zone/website-templates.git $$temp_dir >/dev/null 2>&1
           selected=$$(find $$temp_dir -mindepth 1 -maxdepth 1 -type d | shuf -n 1)
           cp -a $$selected/. /usr/share/nginx/html/
+          touch /usr/share/nginx/html/.site-installed
           rm -rf $$temp_dir
           echo "Fake website successfully installed!"
         fi
