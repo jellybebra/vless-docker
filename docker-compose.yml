@@ -1,15 +1,22 @@
 services:
   traefik:
-    image: traefik:latest
+    image: traefik:v3.6.13
     restart: unless-stopped
     command:
+      - "--api.insecure=false"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=traefik-public"
+
+      # Стандартные точки входа
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.fakesite.address=:8443"
+      - "--entrypoints.loopback.address=:8443"
+      - "--entrypoints.loopback.proxyProtocol.insecure=true"
 
-      - "--entrypoints.fakesite.proxyProtocol.insecure=true"
+      # Глобальный редирект HTTP -> HTTPS
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
 
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
@@ -21,6 +28,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik_letsencrypt:/letsencrypt
+    networks:
+      - traefik-public
 
   fakesite:
     image: nginx:alpine
@@ -42,14 +51,13 @@ services:
           echo "Fake website successfully installed!"
         fi
         exec nginx -g "daemon off;"
+    networks:
+      - traefik-public
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.fakesite-http.rule=Host(`${SELF_SNI_DOMAIN}`)"
-      - "traefik.http.routers.fakesite-http.entrypoints=web"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-      - "traefik.http.routers.fakesite-http.middlewares=redirect-to-https"
+      # Ловим трафик только на порту 8443 (loopback) после проверки Xray
       - "traefik.http.routers.fakesite-https.rule=Host(`${SELF_SNI_DOMAIN}`)"
-      - "traefik.http.routers.fakesite-https.entrypoints=fakesite"
+      - "traefik.http.routers.fakesite-https.entrypoints=loopback"
       - "traefik.http.routers.fakesite-https.tls=true"
       - "traefik.http.routers.fakesite-https.tls.certresolver=letsencrypt"
       - "traefik.http.services.fakesite-svc.loadbalancer.server.port=80"
@@ -66,10 +74,12 @@ services:
 
     volumes:
       - ./data/xui:/etc/x-ui
-
+    networks:
+      - traefik-public
     labels:
       - "traefik.enable=true"
 
+      # 1. TCP Роутер (Вернул привязку к сервису)
       - "traefik.tcp.routers.vless-https.rule=HostSNI(`${SELF_SNI_DOMAIN}`)"
       - "traefik.tcp.routers.vless-https.tls=true"
       - "traefik.tcp.routers.vless-https.tls.passthrough=true"
@@ -77,23 +87,28 @@ services:
       - "traefik.tcp.routers.vless-https.service=vless-https-svc"
       - "traefik.tcp.services.vless-https-svc.loadbalancer.server.port=443"
 
+      # 2. HTTP Роутер панели X-UI (Вернул приоритет и привязку к сервису)
       - "traefik.http.routers.vless-panel.rule=Host(`${SELF_SNI_DOMAIN}`) && PathPrefix(`/${XUI_WEBPATH}`)"
-      - "traefik.http.routers.vless-panel.entrypoints=fakesite"
+      - "traefik.http.routers.vless-panel.entrypoints=loopback"
       - "traefik.http.routers.vless-panel.tls=true"
       - "traefik.http.routers.vless-panel.tls.certresolver=letsencrypt"
       - "traefik.http.routers.vless-panel.priority=200"
       - "traefik.http.routers.vless-panel.service=vless-panel-svc"
+      - "traefik.http.services.vless-panel-svc.loadbalancer.server.port=8080"
 
+      # 3. HTTP Роутер подписок (Вернул приоритет и привязку к сервису)
       - "traefik.http.routers.vless-sub.rule=Host(`${SELF_SNI_DOMAIN}`) && PathPrefix(`/sub/`)"
-      - "traefik.http.routers.vless-sub.entrypoints=fakesite"
+      - "traefik.http.routers.vless-sub.entrypoints=loopback"
       - "traefik.http.routers.vless-sub.tls=true"
       - "traefik.http.routers.vless-sub.tls.certresolver=letsencrypt"
       - "traefik.http.routers.vless-sub.priority=190"
       - "traefik.http.routers.vless-sub.service=vless-sub-svc"
-
-      - "traefik.http.services.vless-panel-svc.loadbalancer.server.port=8080"
       - "traefik.http.services.vless-sub-svc.loadbalancer.server.port=2096"
 
 volumes:
   fakesite_data:
   traefik_letsencrypt:
+
+networks:
+  traefik-public:
+    external: true
