@@ -68,7 +68,7 @@
    * Откройте панель **3x-ui** → **Xray Settings** → **Outbounds**.
    * Нажмите **WARP** → **Create**.
    * Проверьте, что добавлен outbound с тегом `warp`.
-   * *Рекомендуется:* В настройках этого outbound замените `engage.cloudflareclient.com:2408` на `162.159.192.1:2408`.
+   * В настройках этого outbound замените `engage.cloudflareclient.com:2408` на `162.159.192.1:2408`, а также выставьте `Domain Strategy` - `ForceIPv4`
 
 2. **Настройка правил маршрутизации (Routing Rules):**
    * Перейдите в **Xray Settings** → **Routing Rules**.
@@ -88,6 +88,8 @@
    5. TCP,UDP -> warp
    ```
 4. Нажмите **Save** и перезагрузите Xray (Restart Xray).
+
+> Еще в outbounds, в WARP, надо настроить .
 
 ---
 
