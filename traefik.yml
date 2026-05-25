@@ -23,11 +23,17 @@ services:
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
 
-      # Универсальный резолвер (DNS Challenge)
+      # Резолвер для доменов на Cloudflare (DNS-01)
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
       - "--certificatesresolvers.letsencrypt.acme.email=${EMAIL}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+
+      # Резолвер для доменов вне Cloudflare (HTTP-01) — например, Aeza
+      - "--certificatesresolvers.le-http.acme.httpchallenge=true"
+      - "--certificatesresolvers.le-http.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.le-http.acme.email=${EMAIL}"
+      - "--certificatesresolvers.le-http.acme.storage=/letsencrypt/acme-http.json"
     ports:
       - "80:80"
       - "443:443"
