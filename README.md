@@ -36,7 +36,7 @@
    ```bash
    mkdir -p /opt/traefik && cd /opt/traefik
    ```
-2. Создайте файл `docker-compose.yml` (содержимое взять из [traefik.yml](traefik.yml)) и `.env` (по примеру `.env.example`), впишите туда `CF_DNS_API_TOKEN` и ваш `EMAIL`.
+2. Создайте файл `docker-compose.yml` (содержимое взять из [traefik.yml](traefik.yml)) и [.env](.env.example), впишите туда `CF_DNS_API_TOKEN` и ваш `EMAIL`.
 3. Запустите сеть и контейнер:
    ```bash
    docker network create traefik-public
@@ -48,7 +48,7 @@
    ```bash
    mkdir -p /opt/vless && cd /opt/vless
    ```
-2. Создайте файл `docker-compose.yml`, `entrypoint.sh` и `.env` (по примеру `.env.example`), заполнив данные от панели и домена.
+2. Создайте файл [docker-compose.yml](docker-compose.yml), [entrypoint.sh](entrypoint.sh) и [.env](.env.example), заполнив данные от панели и домена.
 3. Запустите скрипт автоматической настройки на хосте:
    ```bash
    bash entrypoint.sh
