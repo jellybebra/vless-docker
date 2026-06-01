@@ -1,10 +1,11 @@
 # VLESS + Traefik Docker Stack
 
-Связка `3x-ui` (VLESS/Xray) и `traefik` через `docker compose`. 
+Связка `3x-ui` (VLESS TCP REALITY), `warp` и `traefik` через `docker compose`. 
 
 **Особенности сборки:**
 * Автоматическая выписка и обновление SSL-сертификатов (Let's Encrypt).
-* Автоматически скачивает фейковый сайт.
+* Автоматически скачивает фейковый сайт. 
+* Автоматически настраивает Cloudflare WARP и маршрутизацию против раскрытия реального IP-адреса сервера.
 
 ---
 
@@ -36,7 +37,7 @@
    ```bash
    mkdir -p /opt/traefik && cd /opt/traefik
    ```
-2. Создайте файл `docker-compose.yml` (содержимое взять из [traefik.yml](traefik.yml)) и [.env](.env.example), впишите туда `CF_DNS_API_TOKEN` и ваш `EMAIL`.
+2. Создайте файл `docker-compose.yml` ([traefik.yml](traefik.yml)) и [.env](.env.example), заполнив данные.
 3. Запустите сеть и контейнер:
    ```bash
    docker network create traefik-public
@@ -53,42 +54,10 @@
    ```bash
    bash entrypoint.sh
    ```
-4. Скрипт автоматически запустит контейнер с официальным образом `3x-ui`, установит необходимые утилиты, применит настройки панели, настроит блокировку `geoip:ru` и автоматически создаст/обновит Reality inbound на порту 443.
-5. Панель будет доступна по адресу:
+4. Панель будет доступна по адресу:
    ```text
    https://<SELF_SNI_DOMAIN>/<XUI_WEBPATH>
    ```
-
----
-
-## ⚙️ Настройка WARP
-
-Это необходимо, чтобы не палить IP прокси-сервера.
-
-1. **Создание исходящего соединения (Outbound):**
-   * Откройте панель **3x-ui** → **Xray Settings** → **Outbounds**.
-   * Нажмите **WARP** → **Create**.
-   * Проверьте, что добавлен outbound с тегом `warp`.
-   * В настройках этого outbound замените `engage.cloudflareclient.com:2408` на `162.159.192.1:2408`, а также выставьте `Domain Strategy` - `ForceIPv4`
-
-2. **Настройка правил маршрутизации (Routing Rules):**
-   * Перейдите в **Xray Settings** → **Routing Rules**.
-   * Добавьте новое правило для перенаправления всего трафика в WARP:
-     ```text
-     Network      = tcp,udp
-     Outbound Tag = warp
-     ```
-
-3. **Сортировка правил:**
-   Убедитесь, что правила маршрутизации расположены **строго в следующем порядке**, иначе VPN перестанет работать:
-   ```text
-   1. api -> api
-   2. geoip:ru -> blocked
-   3. geoip:private -> blocked
-   4. bittorrent -> blocked
-   5. TCP,UDP -> warp
-   ```
-4. Нажмите **Save** и перезагрузите Xray (Restart Xray).
 
 ---
 
@@ -99,13 +68,6 @@
 ```bash
 cp -a docker-compose.yml docker-compose.backup.yml
 docker run --rm -v xui_data:/volume -v $(pwd):/backup alpine tar czf /backup/xui_backup.tar.gz -C /volume .
-```
-
-### Обновление / Применение изменений
-Если вы отредактировали `docker-compose.yml` или `.env`, примените их командами:
-```bash
-docker compose pull
-docker compose up -d
 ```
 
 ### Откат к бэкапу

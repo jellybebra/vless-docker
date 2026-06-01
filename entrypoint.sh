@@ -310,8 +310,9 @@ panel_update_xray_setting() {
     --data-urlencode "outboundTestUrl=${outbound_test_url}"
 }
 
-ensure_geoip_ru_block_rule() {
-  local xray_resp xray_payload xray_setting outbound_test_url normalized_current normalized_updated update_resp
+ensure_warp_configuration() {
+  local xray_resp xray_payload xray_setting outbound_test_url
+  local warp_exists updated_xray_setting update_resp
 
   log "Loading current Xray template settings ..."
   xray_resp="$(panel_get_xray_setting || true)"
@@ -321,43 +322,119 @@ ensure_geoip_ru_block_rule() {
   xray_setting="$(jq -c '.xraySetting' <<<"${xray_payload}")"
   outbound_test_url="$(jq -r '.outboundTestUrl // "https://www.google.com/generate_204"' <<<"${xray_payload}")"
 
-  normalized_current="$(jq -cS '.' <<<"${xray_setting}")"
-  normalized_updated="$(
-    jq -cS '
-      .outbounds = (.outbounds // []) |
+  # 1. Check if WARP outbound already exists
+  warp_exists="$(jq -r '.outbounds[]? | select(.tag == "warp" and .protocol == "wireguard") | .tag' <<<"${xray_setting}")"
+
+  if [[ -z "${warp_exists}" ]]; then
+    log "WARP outbound not found. Registering a new free Cloudflare WARP account ..."
+    
+    # Generate X25519 keypair inside the container
+    local tmp_pem="/tmp/warp_priv.pem"
+    local priv_key pub_key
+    docker compose exec -T vless sh -c "openssl genpkey -algorithm X25519 -out ${tmp_pem}"
+    priv_key="$(docker compose exec -T vless sh -c "openssl pkey -in ${tmp_pem} -outform DER | tail -c 32 | base64" | tr -d ' \t\r\n')"
+    pub_key="$(docker compose exec -T vless sh -c "openssl pkey -in ${tmp_pem} -pubout -outform DER | tail -c 32 | base64" | tr -d ' \t\r\n')"
+    docker compose exec -T vless sh -c "rm -f ${tmp_pem}"
+
+    if [[ -z "${priv_key}" ]] || [[ -z "${pub_key}" ]]; then
+      log "ERROR: Failed to generate X25519 keypair inside the container"
+      return 1
+    fi
+
+    # Register on Cloudflare API
+    local warp_resp v4_addr v6_addr peer_pub_key
+    warp_resp="$(
+      docker compose exec -T vless curl -s -X POST -H "Content-Type: application/json" \
+        -d "{\"install_id\":\"\",\"key\":\"${pub_key}\",\"fcm_token\":\"\",\"tos\":\"2020-04-02T00:00:00.000+02:00\",\"model\":\"\",\"brand\":\"\",\"locale\":\"en_US\"}" \
+        https://api.cloudflareclient.com/v0a2408/reg || true
+    )"
+
+    if ! jq -e '.config.peers[0].public_key' >/dev/null 2>&1 <<<"${warp_resp}"; then
+      log "ERROR: Cloudflare WARP registration failed: ${warp_resp}"
+      return 1
+    fi
+
+    v4_addr="$(jq -r '.config.interface.addresses.v4' <<<"${warp_resp}")"
+    v6_addr="$(jq -r '.config.interface.addresses.v6' <<<"${warp_resp}")"
+    peer_pub_key="$(jq -r '.config.peers[0].public_key' <<<"${warp_resp}")"
+
+    log "Successfully registered WARP: v4=${v4_addr}, v6=${v6_addr}"
+
+    # Inject the WARP outbound using JQ
+    xray_setting="$(
+      jq -c \
+        --arg priv_key "${priv_key}" \
+        --arg pub_key "${peer_pub_key}" \
+        --arg v4 "${v4_addr}/32" \
+        --arg v6 "${v6_addr}/128" \
+        '
+        .outbounds |= (. // []) |
+        .outbounds += [{
+          tag: "warp",
+          protocol: "wireguard",
+          settings: {
+            secretKey: $priv_key,
+            address: [$v4, $v6],
+            peers: [{
+              publicKey: $pub_key,
+              endpoint: "162.159.192.1:2408"
+            }],
+            domainStrategy: "ForceIPv4"
+          }
+        }]
+        ' <<<"${xray_setting}"
+    )"
+  else
+    log "WARP outbound already configured."
+  fi
+
+  # 2. Re-arrange and enforce routing rules order strictly as per README:
+  # 1. api -> api
+  # 2. geoip:ru -> blocked
+  # 3. geoip:private -> blocked
+  # 4. bittorrent -> blocked
+  # 5. TCP,UDP -> warp
+  log "Enforcing Xray routing rules order strictly ..."
+  updated_xray_setting="$(
+    jq -c '
       .routing = (.routing // {}) |
-      .routing.rules = (.routing.rules // []) |
-      ([.outbounds[]? | select(.protocol == "blackhole" and ((.tag // "") != "")) | .tag] | unique) as $block_tags |
-      ($block_tags[0] // "blocked") as $block_tag |
-      .outbounds |= (
-        if ($block_tags | length) == 0 then
-          . + [{tag: $block_tag, protocol: "blackhole", settings: {}}]
-        else
-          .
-        end
-      ) |
-      .routing.rules |= (
-        if any(
-          .[]?;
-          (.type // "") == "field" and
-          ((.outboundTag // "") as $tag | (($block_tags + [$block_tag]) | index($tag)) != null) and
-          any((.ip // [])[]?; . == "geoip:ru")
-        ) then
-          .
-        else
-          [{type: "field", outboundTag: $block_tag, ip: ["geoip:ru"]}] + .
-        end
-      )
+      .routing.rules = [
+        {
+          type: "field",
+          inboundTag: ["api"],
+          outboundTag: "api"
+        },
+        {
+          type: "field",
+          ip: ["geoip:ru"],
+          outboundTag: "blocked"
+        },
+        {
+          type: "field",
+          ip: ["geoip:private"],
+          outboundTag: "blocked"
+        },
+        {
+          type: "field",
+          protocol: ["bittorrent"],
+          outboundTag: "blocked"
+        },
+        {
+          type: "field",
+          network: "tcp,udp",
+          outboundTag: "warp"
+        }
+      ]
     ' <<<"${xray_setting}"
   )"
 
-  if [[ "${normalized_updated}" == "${normalized_current}" ]]; then
-    log "Xray routing rule for geoip:ru already exists."
+  if [[ "$(jq -cS '.' <<<"${xray_setting}")" == "$(jq -cS '.' <<<"${updated_xray_setting}")" ]]; then
+    log "Xray settings and routing rules are already in the correct state."
     return 0
   fi
 
-  log "Applying Xray routing rule: block outbound traffic to geoip:ru ..."
-  update_resp="$(panel_update_xray_setting "${normalized_updated}" "${outbound_test_url}" || true)"
+  log "Applying updated Xray template settings (WARP outbound and routing rules) ..."
+  update_resp="$(panel_update_xray_setting "${updated_xray_setting}" "${outbound_test_url}" || true)"
   ensure_success "${update_resp}" "update Xray settings"
 }
 
@@ -432,7 +509,7 @@ main() {
   login_panel
 
   ensure_subscription_urls
-  ensure_geoip_ru_block_rule
+  ensure_warp_configuration
 
   log "Creating Reality inbound on port 443..."
   local keys_resp priv_key pub_key short_id client_id email sub_id settings stream sniffing
