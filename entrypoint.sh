@@ -5,6 +5,20 @@ log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
 }
 
+# Load environment variables from .env on the host
+if [[ -f .env ]]; then
+  log "Loading environment variables from .env ..."
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ ! "$line" =~ ^# ]] && [[ "$line" =~ = ]]; then
+      key="${line%%=*}"
+      value="${line#*=}"
+      value="${value#[\"\']}"
+      value="${value%[\"\']}"
+      export "$key=$value"
+    fi
+  done < .env
+fi
+
 require_env() {
   local key="$1"
   if [[ -z "${!key:-}" ]]; then
@@ -23,11 +37,6 @@ XUI_WEBPATH="${XUI_WEBPATH%/}"
 XUI_PORT="${XUI_PORT:-8080}"
 REALITY_DEST="${REALITY_DEST:-traefik:8443}"
 REALITY_XVER="${REALITY_XVER:-1}"
-XUI_HOME="${XUI_HOME:-/app}"
-
-if [[ ! -x "${XUI_HOME}/x-ui" && -x "/usr/local/x-ui/x-ui" ]]; then
-  XUI_HOME="/usr/local/x-ui"
-fi
 
 if ! [[ "${XUI_PORT}" =~ ^[0-9]+$ ]] || ((XUI_PORT < 1 || XUI_PORT > 65535)); then
   log "ERROR: XUI_PORT must be an integer in range 1..65535"
@@ -39,9 +48,24 @@ if ! [[ "${REALITY_XVER}" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+# Helper to run curl inside the Docker container
+container_curl() {
+  docker compose exec -T vless curl "$@"
+}
+
+# Helper to generate a UUID in a cross-platform way
+generate_uuid() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr '[:upper:]' '[:lower:]' | tr -d ' \t\r\n'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import uuid; print(str(uuid.uuid4()))'
+  else
+    od -x -N 16 /dev/urandom | head -n 1 | awk '{print $2$3"-"$4"-"$5"-"$6"-"$7$8$9}'
+  fi
+}
+
 BASE_URL="http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
 COOKIE_JAR="/tmp/xui_cookie.jar"
-xui_pid=""
 
 readonly CURL_CONNECT_TIMEOUT=3
 readonly CURL_MAX_TIME=15
@@ -64,21 +88,11 @@ ${origin}/login/
 EOF
 }
 
-cleanup() {
-  set +e
-  if [[ -n "${xui_pid}" ]]; then
-    kill "${xui_pid}" >/dev/null 2>&1 || true
-  else
-    pkill -f "${XUI_HOME}/x-ui" >/dev/null 2>&1 || true
-  fi
-}
-trap cleanup EXIT INT TERM
-
 wait_for_panel() {
   log "Waiting for x-ui panel on 127.0.0.1:${XUI_PORT} ..."
   for _ in $(seq 1 180); do
     for origin in "${PANEL_ORIGINS[@]}"; do
-      if curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time 5 -sS -o /dev/null "${origin}/"; then
+      if container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time 5 -sS -o /dev/null "${origin}/"; then
         return 0
       fi
     done
@@ -96,7 +110,7 @@ login_panel() {
   for origin in "${PANEL_ORIGINS[@]}"; do
     while IFS= read -r url; do
       resp="$(
-        curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" \
+        container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" \
           -sS -c "${COOKIE_JAR}" -X POST "${url}" \
           -H "Content-Type: application/json" -d "${payload}" || true
       )"
@@ -121,14 +135,14 @@ api_post() {
   local endpoint="$1"
   shift || true
   log "API POST ${endpoint}" >&2
-  curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" -X POST "${BASE_URL}${endpoint}" "$@"
+  container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" -X POST "${BASE_URL}${endpoint}" "$@"
 }
 
 api_get() {
   local endpoint="$1"
   shift || true
   log "API GET ${endpoint}" >&2
-  curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" "${BASE_URL}${endpoint}" "$@"
+  container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" "${BASE_URL}${endpoint}" "$@"
 }
 
 response_is_success() {
@@ -428,32 +442,39 @@ ensure_subscription_urls() {
 }
 
 main() {
-  cd "${XUI_HOME}"
+  log "Ensuring vless container is running ..."
+  docker compose up -d vless
 
-  if [[ ! -x "./x-ui" || ! -x "./bin/xray-linux-amd64" ]]; then
-    log "ERROR: x-ui binaries are missing or not executable in ${XUI_HOME}"
-    exit 1
+  log "Ensuring curl, jq, and openssl are installed inside the container ..."
+  docker compose exec -T vless apk add --no-cache curl jq openssl bash >/dev/null 2>&1 || true
+
+  # Set up the base URL for curl commands inside the container
+  BASE_URL="http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
+
+  # Try to log in with custom credentials.
+  # If it fails, it means we need to perform initial configuration.
+  if ! login_panel >/dev/null 2>&1; then
+    log "Panel is not configured or running on the default port. Initializing settings inside the container..."
+    
+    # Run the x-ui setting command inside the container to configure port, credentials, and web path.
+    docker compose exec -T vless /usr/local/x-ui/x-ui setting \
+      -username "${XUI_USERNAME}" \
+      -password "${XUI_PASSWORD}" \
+      -port "${XUI_PORT}" \
+      -webBasePath "${XUI_WEBPATH}" >/dev/null 2>&1 || true
+    
+    log "Restarting container to apply settings..."
+    docker compose restart vless
+    
+    log "Waiting for panel to start up..."
+    wait_for_panel
+    
+    log "Logging in with new credentials..."
+    login_panel
+  else
+    log "Panel is already initialized and reachable with custom credentials."
   fi
 
-  if [[ "${XUI_ENABLE_FAIL2BAN:-true}" == "true" ]]; then
-    fail2ban-client -x start >/dev/null 2>&1 || true
-  fi
-
-  log "Applying x-ui settings (port ${XUI_PORT}, HTTP, custom credentials/path) ..."
-  ./x-ui setting \
-    -username "${XUI_USERNAME}" \
-    -password "${XUI_PASSWORD}" \
-    -port "${XUI_PORT}" \
-    -webBasePath "${XUI_WEBPATH}" >/dev/null 2>&1 || true
-  ./x-ui migrate >/dev/null 2>&1 || true
-
-  log "Starting x-ui ..."
-  ./x-ui &
-  xui_pid="$!"
-
-  wait_for_panel
-  log "Panel is reachable."
-  login_panel
   ensure_subscription_urls
   ensure_geoip_ru_block_rule
 
@@ -473,7 +494,7 @@ main() {
     priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
     pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
     short_id="$(openssl rand -hex 8)"
-    client_id="$(cat /proc/sys/kernel/random/uuid)"
+    client_id="$(generate_uuid)"
     email="client-$(openssl rand -hex 4)"
     sub_id="$(openssl rand -hex 16)"
     settings="$(build_default_client_settings "${client_id}" "${email}" "${sub_id}")"
@@ -500,7 +521,7 @@ main() {
 
   # Ensure at least one client exists.
   if [[ "$(jq '.clients | length' <<<"${settings}")" -eq 0 ]]; then
-    client_id="$(cat /proc/sys/kernel/random/uuid)"
+    client_id="$(generate_uuid)"
     email="client-$(openssl rand -hex 4)"
     sub_id="$(openssl rand -hex 16)"
     settings="$(build_default_client_settings "${client_id}" "${email}" "${sub_id}")"
@@ -583,8 +604,6 @@ main() {
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
   log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
   log "Dest: ${REALITY_DEST}; SNI: ${SELF_SNI_DOMAIN}; Xver: ${REALITY_XVER}"
-
-  wait "${xui_pid}"
 }
 
 main "$@"
