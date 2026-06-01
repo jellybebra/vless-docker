@@ -1,4 +1,4 @@
-FROM ghcr.io/mhsanaei/3x-ui:2.8.11
+FROM ghcr.io/mhsanaei/3x-ui:2.9.1
 
 USER root
 
