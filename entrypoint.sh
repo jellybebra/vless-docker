@@ -530,6 +530,9 @@ main() {
   
   ensure_success "$(panel_add_inbound true "${settings}" "${stream}" "${sniffing}")" "create inbound 443"
 
+  log "Restarting container to apply all settings..."
+  docker compose restart vless
+
   log "Provisioning completed."
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
 }
