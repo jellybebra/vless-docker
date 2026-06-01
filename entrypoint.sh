@@ -150,15 +150,7 @@ response_is_success() {
   [[ -n "${resp}" ]] && jq -e '.success == true' >/dev/null 2>&1 <<<"${resp}"
 }
 
-panel_list_inbounds() {
-  local resp
-  resp="$(api_get "/panel/api/inbounds/list" || true)"
-  if response_is_success "${resp}"; then
-    printf '%s\n' "${resp}"
-    return 0
-  fi
-  api_post "/panel/inbound/list"
-}
+
 
 panel_get_new_x25519() {
   local resp
@@ -286,36 +278,6 @@ panel_add_inbound() {
   api_post "/panel/inbound/add" "${payload[@]}"
 }
 
-panel_update_inbound() {
-  local inbound_id="$1"
-  local enable="$2"
-  local settings="$3"
-  local stream_settings="$4"
-  local sniffing="$5"
-  local payload=(
-    --data-urlencode "up=0" \
-    --data-urlencode "down=0" \
-    --data-urlencode "total=0" \
-    --data-urlencode "remark=reality443-auto" \
-    --data-urlencode "enable=${enable}" \
-    --data-urlencode "expiryTime=0" \
-    --data-urlencode "listen=" \
-    --data-urlencode "port=443" \
-    --data-urlencode "protocol=vless" \
-    --data-urlencode "settings=${settings}" \
-    --data-urlencode "streamSettings=${stream_settings}" \
-    --data-urlencode "sniffing=${sniffing}"
-  )
-  local resp
-
-  resp="$(api_post "/panel/api/inbounds/update/${inbound_id}" "${payload[@]}" || true)"
-  if response_is_success "${resp}"; then
-    printf '%s\n' "${resp}"
-    return 0
-  fi
-
-  api_post "/panel/inbound/update/${inbound_id}" "${payload[@]}"
-}
 
 normalize_path_with_slashes() {
   local p="${1:-}"
@@ -451,159 +413,48 @@ main() {
   # Set up the base URL for curl commands inside the container
   BASE_URL="http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
 
-  # Try to log in with custom credentials.
-  # If it fails, it means we need to perform initial configuration.
-  if ! login_panel >/dev/null 2>&1; then
-    log "Panel is not configured or running on the default port. Initializing settings inside the container..."
-    
-    # Run the x-ui setting command inside the container to configure port, credentials, and web path.
-    docker compose exec -T vless /usr/local/x-ui/x-ui setting \
-      -username "${XUI_USERNAME}" \
-      -password "${XUI_PASSWORD}" \
-      -port "${XUI_PORT}" \
-      -webBasePath "${XUI_WEBPATH}" >/dev/null 2>&1 || true
-    
-    log "Restarting container to apply settings..."
-    docker compose restart vless
-    
-    log "Waiting for panel to start up..."
-    wait_for_panel
-    
-    log "Logging in with new credentials..."
-    login_panel
-  else
-    log "Panel is already initialized and reachable with custom credentials."
-  fi
+  log "Initializing settings inside the container..."
+  
+  # Run the x-ui setting command inside the container to configure port, credentials, and web path.
+  docker compose exec -T vless /usr/local/x-ui/x-ui setting \
+    -username "${XUI_USERNAME}" \
+    -password "${XUI_PASSWORD}" \
+    -port "${XUI_PORT}" \
+    -webBasePath "${XUI_WEBPATH}" >/dev/null 2>&1 || true
+  
+  log "Restarting container to apply settings..."
+  docker compose restart vless
+  
+  log "Waiting for panel to start up..."
+  wait_for_panel
+  
+  log "Logging in..."
+  login_panel
 
   ensure_subscription_urls
   ensure_geoip_ru_block_rule
 
-  local list_resp inbound inbound_id settings stream sniffing
-  local keys_resp priv_key pub_key short_id client_id email sub_id
+  log "Creating Reality inbound on port 443..."
+  local keys_resp priv_key pub_key short_id client_id email sub_id settings stream sniffing
 
-  list_resp="$(panel_list_inbounds)"
-  ensure_success "${list_resp}" "inbound list"
-
-  inbound="$(jq -c '.obj[]? | select(.port == 443)' <<<"${list_resp}" | head -n 1 || true)"
-  sniffing="$(build_default_sniffing)"
-
-  if [[ -z "${inbound}" ]]; then
-    log "Inbound on port 443 not found, creating one (wizard style) ..."
-    keys_resp="$(panel_get_new_x25519)"
-    ensure_success "${keys_resp}" "getNewX25519Cert"
-    priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
-    pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
-    short_id="$(openssl rand -hex 8)"
-    client_id="$(generate_uuid)"
-    email="client-$(openssl rand -hex 4)"
-    sub_id="$(openssl rand -hex 16)"
-    settings="$(build_default_client_settings "${client_id}" "${email}" "${sub_id}")"
-    stream="$(build_stream_settings "${REALITY_DEST}" "${SELF_SNI_DOMAIN}" "${REALITY_XVER}" "${priv_key}" "${pub_key}" "${short_id}")"
-    ensure_success "$(panel_add_inbound true "${settings}" "${stream}" "${sniffing}")" "create inbound 443"
-    list_resp="$(panel_list_inbounds)"
-    ensure_success "${list_resp}" "inbound list after create"
-    inbound="$(jq -c '.obj[]? | select(.port == 443)' <<<"${list_resp}" | head -n 1 || true)"
-  fi
-
-  if [[ -z "${inbound}" ]]; then
-    log "ERROR: could not obtain inbound on port 443"
-    exit 1
-  fi
-
-  inbound_id="$(jq -r '.id' <<<"${inbound}")"
-  settings="$(jq -c '
-    (
-      .settings
-      | if type == "string" then (try fromjson catch {}) else . end
-      | .decryption = "none"
-      | .fallbacks = []
-    )' <<<"${inbound}")"
-
-  # Ensure at least one client exists.
-  if [[ "$(jq '.clients | length' <<<"${settings}")" -eq 0 ]]; then
-    client_id="$(generate_uuid)"
-    email="client-$(openssl rand -hex 4)"
-    sub_id="$(openssl rand -hex 16)"
-    settings="$(build_default_client_settings "${client_id}" "${email}" "${sub_id}")"
-  fi
-
-  stream="$(jq -c '
-    (
-      .streamSettings
-      | if type == "string" then (try fromjson catch {}) else . end
-    )' <<<"${inbound}")"
-  if [[ "${stream}" == "null" || -z "${stream}" ]]; then
-    keys_resp="$(panel_get_new_x25519)"
-    ensure_success "${keys_resp}" "getNewX25519Cert"
-    priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
-    pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
-    short_id="$(openssl rand -hex 8)"
-    stream="$(build_stream_settings "${REALITY_DEST}" "${SELF_SNI_DOMAIN}" "${REALITY_XVER}" "${priv_key}" "${pub_key}" "${short_id}")"
-  fi
-
-  log "Saving current inbound settings for ${inbound_id} without disabling it ..."
-  ensure_success "$(panel_update_inbound "${inbound_id}" true "${settings}" "${stream}" "${sniffing}")" "save inbound settings"
-
-  log "Applying Reality fields (dest, sni, xver) to inbound ${inbound_id} ..."
+  keys_resp="$(panel_get_new_x25519)"
+  ensure_success "${keys_resp}" "getNewX25519Cert"
+  priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
+  pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
+  
   short_id="$(openssl rand -hex 8)"
-  stream="$(jq -c \
-    --arg dest "${REALITY_DEST}" \
-    --arg sni "${SELF_SNI_DOMAIN}" \
-    --arg sid "${short_id}" \
-    --argjson xver "${REALITY_XVER}" \
-    '
-    .network = (.network // "tcp") |
-    .security = (.security // "reality") |
-    .externalProxy = (.externalProxy // []) |
-    .realitySettings = (.realitySettings // {}) |
-    .realitySettings.dest = $dest |
-    .realitySettings.serverNames = [$sni] |
-    .realitySettings.xver = $xver |
-    .realitySettings.shortIds =
-      (
-        if ((.realitySettings.shortIds // []) | type) == "array" and ((.realitySettings.shortIds // []) | length) > 0
-        then (.realitySettings.shortIds // [])
-        else [$sid]
-        end
-      ) |
-    .realitySettings.settings = (.realitySettings.settings // {}) |
-    .realitySettings.settings.fingerprint = (.realitySettings.settings.fingerprint // "chrome") |
-    .realitySettings.settings.serverName = (.realitySettings.settings.serverName // "") |
-    .realitySettings.settings.spiderX = (.realitySettings.settings.spiderX // "/") |
-    .tcpSettings = (.tcpSettings // {"acceptProxyProtocol": false, "header": {"type": "none"}})
-    ' <<<"${stream}")"
-  ensure_success "$(panel_update_inbound "${inbound_id}" true "${settings}" "${stream}" "${sniffing}")" "apply dest/sni/xver"
-
-  priv_key="$(jq -r '.realitySettings.privateKey // empty' <<<"${stream}")"
-  pub_key="$(jq -r '.realitySettings.settings.publicKey // empty' <<<"${stream}")"
-
-  if [[ -z "${priv_key}" || -z "${pub_key}" ]]; then
-    log "Reality cert/key pair is missing, requesting a new pair (Get New Cert) ..."
-    keys_resp="$(panel_get_new_x25519)"
-    ensure_success "${keys_resp}" "getNewX25519Cert for final update"
-    priv_key="$(jq -r '.obj.privateKey' <<<"${keys_resp}")"
-    pub_key="$(jq -r '.obj.publicKey' <<<"${keys_resp}")"
-
-    stream="$(jq -c \
-      --arg priv "${priv_key}" \
-      --arg pub "${pub_key}" \
-      '
-      .realitySettings = (.realitySettings // {}) |
-      .realitySettings.privateKey = $priv |
-      .realitySettings.settings = (.realitySettings.settings // {}) |
-      .realitySettings.settings.publicKey = $pub
-      ' <<<"${stream}")"
-  else
-    log "Keeping existing Reality cert/key pair to preserve client compatibility after restart."
-  fi
-
-  log "Saving inbound update and enabling inbound back ..."
-  ensure_success "$(panel_update_inbound "${inbound_id}" true "${settings}" "${stream}" "${sniffing}")" "enable inbound with self-sni settings"
+  client_id="$(generate_uuid)"
+  email="client-$(openssl rand -hex 4)"
+  sub_id="$(openssl rand -hex 16)"
+  
+  settings="$(build_default_client_settings "${client_id}" "${email}" "${sub_id}")"
+  stream="$(build_stream_settings "${REALITY_DEST}" "${SELF_SNI_DOMAIN}" "${REALITY_XVER}" "${priv_key}" "${pub_key}" "${short_id}")"
+  sniffing="$(build_default_sniffing)"
+  
+  ensure_success "$(panel_add_inbound true "${settings}" "${stream}" "${sniffing}")" "create inbound 443"
 
   log "Provisioning completed."
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
-  log "Panel (HTTP, local): http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
-  log "Dest: ${REALITY_DEST}; SNI: ${SELF_SNI_DOMAIN}; Xver: ${REALITY_XVER}"
 }
 
 main "$@"
