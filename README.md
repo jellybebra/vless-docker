@@ -98,7 +98,7 @@
 Создает резервную копию конфигурации Docker и базы данных `3x-ui`:
 ```bash
 cp -a docker-compose.yml docker-compose.backup.yml
-cp -a data/xui data/xui_backup
+docker run --rm -v xui_data:/volume -v $(pwd):/backup alpine tar czf /backup/xui_backup.tar.gz -C /volume .
 ```
 
 ### Обновление / Применение изменений
@@ -113,7 +113,6 @@ docker compose up -d
 ```bash
 docker compose down
 cp -a docker-compose.backup.yml docker-compose.yml
-rm -rf data/xui
-cp -a data/xui_backup data/xui
+docker run --rm -v xui_data:/volume -v $(pwd):/backup alpine sh -c "rm -rf /volume/* && tar xzf /backup/xui_backup.tar.gz -C /volume"
 docker compose up -d
 ```

@@ -39,7 +39,7 @@ services:
       XUI_ENABLE_FAIL2BAN: "true"
 
     volumes:
-      - ./data/xui:/etc/x-ui
+      - xui_data:/etc/x-ui
     networks:
       - traefik-public
     labels:
@@ -73,6 +73,7 @@ services:
 
 volumes:
   fakesite_data:
+  xui_data:
 
 networks:
   traefik-public:
