@@ -235,7 +235,7 @@ build_stream_settings() {
         mldsa65Seed: "",
         settings: {
           publicKey: $public_key,
-          fingerprint: "chrome",
+          fingerprint: "firefox",
           serverName: "",
           spiderX: "/",
           mldsa65Verify: ""
