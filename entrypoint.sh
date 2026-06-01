@@ -66,6 +66,7 @@ generate_uuid() {
 
 BASE_URL="http://127.0.0.1:${XUI_PORT}/${XUI_WEBPATH}"
 COOKIE_JAR="/tmp/xui_cookie.jar"
+CSRF_TOKEN=""
 
 readonly CURL_CONNECT_TIMEOUT=3
 readonly CURL_MAX_TIME=15
@@ -103,16 +104,35 @@ wait_for_panel() {
 }
 
 login_panel() {
-  local payload resp origin url
+  local payload resp origin url html token
   log "Trying panel login ..."
   payload="$(jq -cn --arg u "${XUI_USERNAME}" --arg p "${XUI_PASSWORD}" '{username:$u,password:$p}')"
 
   for origin in "${PANEL_ORIGINS[@]}"; do
+    # Fetch login page first to get initial cookie and CSRF token if present
+    html="$(container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -s -c "${COOKIE_JAR}" "${origin}/${XUI_WEBPATH}/" || true)"
+    token="$(echo "${html}" | sed -n 's/.*meta name="csrf-token" content="\([^"]*\)".*/\1/p' | tr -d ' \t\r\n')"
+    
+    if [[ -n "${token}" ]]; then
+      log "CSRF Token detected: ${token}"
+      CSRF_TOKEN="${token}"
+    else
+      log "No CSRF Token detected (possibly 2.x panel)."
+      CSRF_TOKEN=""
+    fi
+
     while IFS= read -r url; do
+      local headers=(
+        -H "Content-Type: application/json"
+      )
+      if [[ -n "${CSRF_TOKEN}" ]]; then
+        headers+=( -H "X-CSRF-Token: ${CSRF_TOKEN}" )
+      fi
+
       resp="$(
         container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" \
-          -sS -c "${COOKIE_JAR}" -X POST "${url}" \
-          -H "Content-Type: application/json" -d "${payload}" || true
+          -sS -b "${COOKIE_JAR}" -c "${COOKIE_JAR}" -X POST "${url}" \
+          "${headers[@]}" -d "${payload}" || true
       )"
 
       if jq -e '.success == true' >/dev/null 2>&1 <<<"${resp}"; then
@@ -135,14 +155,22 @@ api_post() {
   local endpoint="$1"
   shift || true
   log "API POST ${endpoint}" >&2
-  container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" -X POST "${BASE_URL}${endpoint}" "$@"
+  local headers=()
+  if [[ -n "${CSRF_TOKEN:-}" ]]; then
+    headers+=( -H "X-CSRF-Token: ${CSRF_TOKEN}" )
+  fi
+  container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" "${headers[@]}" -X POST "${BASE_URL}${endpoint}" "$@"
 }
 
 api_get() {
   local endpoint="$1"
   shift || true
   log "API GET ${endpoint}" >&2
-  container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" "${BASE_URL}${endpoint}" "$@"
+  local headers=()
+  if [[ -n "${CSRF_TOKEN:-}" ]]; then
+    headers+=( -H "X-CSRF-Token: ${CSRF_TOKEN}" )
+  fi
+  container_curl --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" -sS -b "${COOKIE_JAR}" "${headers[@]}" "${BASE_URL}${endpoint}" "$@"
 }
 
 response_is_success() {
