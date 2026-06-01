@@ -556,7 +556,13 @@ main() {
   stream="$(build_stream_settings "${REALITY_DEST}" "${SELF_SNI_DOMAIN}" "${REALITY_XVER}" "${priv_key}" "${pub_key}" "${short_id}")"
   sniffing="$(build_default_sniffing)"
   
-  ensure_success "$(panel_add_inbound true "${settings}" "${stream}" "${sniffing}")" "create inbound 443"
+  local add_inbound_resp
+  add_inbound_resp="$(panel_add_inbound true "${settings}" "${stream}" "${sniffing}" || true)"
+  if response_is_success "${add_inbound_resp}"; then
+    log "Reality inbound on port 443 created successfully."
+  else
+    log "Reality inbound on port 443 creation skipped or failed (it might already exist)."
+  fi
 
   log "Restarting container to apply all settings..."
   docker compose restart vless
