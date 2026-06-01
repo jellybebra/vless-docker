@@ -416,7 +416,7 @@ main() {
   log "Initializing settings inside the container..."
   
   # Run the x-ui setting command inside the container to configure port, credentials, and web path.
-  docker compose exec -T vless /usr/local/x-ui/x-ui setting \
+  docker compose exec -T vless /app/x-ui setting \
     -username "${XUI_USERNAME}" \
     -password "${XUI_PASSWORD}" \
     -port "${XUI_PORT}" \
