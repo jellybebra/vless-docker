@@ -293,7 +293,8 @@ panel_add_inbound() {
     --data-urlencode "protocol=vless" \
     --data-urlencode "settings=${settings}" \
     --data-urlencode "streamSettings=${stream_settings}" \
-    --data-urlencode "sniffing=${sniffing}"
+    --data-urlencode "sniffing=${sniffing}" \
+    --data-urlencode "nodeId=0"
   )
   local resp
 
