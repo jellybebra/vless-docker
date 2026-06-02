@@ -253,7 +253,7 @@ build_stream_settings() {
       realitySettings: {
         show: false,
         xver: $xver,
-        dest: $dest,
+        target: $dest,
         serverNames: [$sni],
         privateKey: $private_key,
         minClientVer: "",
