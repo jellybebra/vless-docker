@@ -44,6 +44,22 @@
    docker compose up -d --pull always
    ```
 
+### Только Traefik для веб-приложений
+
+Для сервера без VLESS используйте [traefik.web.yml](traefik.web.yml).
+В `.env` достаточно `EMAIL` и `CF_DNS_API_TOKEN`. Создайте сеть, если её ещё нет:
+
+```bash
+docker network create traefik-public
+docker compose -f traefik.web.yml up -d
+```
+
+Подключите веб-приложение к `traefik-public` и задайте ему Docker labels:
+`traefik.enable=true`, правило `Host(...)`, точку входа `websecure`, резолвер
+`letsencrypt` и внутренний порт сервиса. HTTP автоматически перенаправляется на HTTPS.
+Сертификаты хранятся в постоянном томе `traefik_letsencrypt`.
+Для последующих команд Compose также указывайте `-f traefik.web.yml`.
+
 ### Шаг 2. Развертывание и настройка 3x-ui (VLESS)
 1. Создайте директорию и перейдите в неё:
    ```bash
