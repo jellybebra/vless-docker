@@ -75,22 +75,20 @@ docker compose -f traefik.web.yml up -d
    https://<SELF_SNI_DOMAIN>/<XUI_WEBPATH>
    ```
 
----
+### Cloudflare Tunnel
 
-## 🛡 Тестирование
+Один раз добавьте исключения сниффинга, чтобы `cloudflared` работал через VLESS с HTTP/2.
 
-### Бэкап панели и базы данных
-Создает резервную копию конфигурации Docker и базы данных `3x-ui`:
-```bash
-cp -a docker-compose.yml docker-compose.backup.yml
-docker run --rm -v xui_data:/volume -v $(pwd):/backup alpine tar czf /backup/xui_backup.tar.gz -C /volume .
-```
+1. Откройте панель **3x-ui → Inbounds / Входящие подключения**.
+2. У VLESS TCP REALITY-входа на порту **443** выберите **Edit / Изменить → Sniffing / Сниффинг**.
+3. Включите сниффинг, отметьте **HTTP** и **TLS**. Оставьте **Route only / Только маршрутизация** выключенным.
+4. В **Domains excluded / Исключённые домены** добавьте три отдельных значения, подтверждая каждое клавишей Enter:
 
-### Откат к бэкапу
-Если что-то пошло не так, восстановите рабочую версию из бэкапа:
-```bash
-docker compose down
-cp -a docker-compose.backup.yml docker-compose.yml
-docker run --rm -v xui_data:/volume -v $(pwd):/backup alpine sh -c "rm -rf /volume/* && tar xzf /backup/xui_backup.tar.gz -C /volume"
-docker compose up -d
-```
+   ```text
+   h2.cftunnel.com
+   probe.cftunnel.com
+   quic.cftunnel.com
+   ```
+
+5. Сохраните входящее подключение и нажмите **Перезапуск Xray** в панели.
+6. На компьютере настройте такие же исключения по [инструкции для v2rayN](https://github.com/jellybebra/device-setup/blob/main/docs/v2rayn-routing.md).
