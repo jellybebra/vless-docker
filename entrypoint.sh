@@ -9,6 +9,7 @@ log() {
 if [[ -f .env ]]; then
   log "Loading environment variables from .env ..."
   while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
     if [[ ! "$line" =~ ^# ]] && [[ "$line" =~ = ]]; then
       key="${line%%=*}"
       value="${line#*=}"
@@ -37,6 +38,23 @@ XUI_WEBPATH="${XUI_WEBPATH%/}"
 XUI_PORT="${XUI_PORT:-8080}"
 REALITY_DEST="${REALITY_DEST:-traefik:8443}"
 REALITY_XVER="${REALITY_XVER:-1}"
+WARP_ENABLED="${WARP_ENABLED:-false}"
+case "$WARP_ENABLED" in
+  true|false) ;;
+  *) log "ERROR: WARP_ENABLED must be true or false"; exit 1 ;;
+esac
+
+# shellcheck source=proton-routing.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/proton-routing.sh"
+PROTON_OUTBOUND_JSON=null
+if [[ -n "${PROTON_WG_CONFIG:-}" ]]; then
+  # Validate before starting/restarting containers or changing panel settings.
+  PROTON_OUTBOUND_JSON="$(build_proton_outbound "$PROTON_WG_CONFIG")"
+fi
+if (($# > 1)) || [[ "${1:-}" != "" && "${1:-}" != "--routing-only" ]]; then
+  log "ERROR: Usage: bash entrypoint.sh [--routing-only]"
+  exit 1
+fi
 
 if ! [[ "${XUI_PORT}" =~ ^[0-9]+$ ]] || ((XUI_PORT < 1 || XUI_PORT > 65535)); then
   log "ERROR: XUI_PORT must be an integer in range 1..65535"
@@ -114,7 +132,7 @@ login_panel() {
     token="$(echo "${html}" | sed -n 's/.*meta name="csrf-token" content="\([^"]*\)".*/\1/p' | tr -d ' \t\r\n')"
     
     if [[ -n "${token}" ]]; then
-      log "CSRF Token detected: ${token}"
+      log "CSRF Token detected."
       CSRF_TOKEN="${token}"
     else
       log "No CSRF Token detected (possibly 2.x panel)."
@@ -339,7 +357,7 @@ panel_update_xray_setting() {
     --data-urlencode "outboundTestUrl=${outbound_test_url}"
 }
 
-ensure_warp_configuration() {
+ensure_outbound_configuration() {
   local xray_resp xray_payload xray_setting outbound_test_url
   local warp_exists updated_xray_setting update_resp
 
@@ -354,7 +372,7 @@ ensure_warp_configuration() {
   # 1. Check if WARP outbound already exists
   warp_exists="$(jq -r '.outbounds[]? | select(.tag == "warp" and .protocol == "wireguard") | .tag' <<<"${xray_setting}")"
 
-  if [[ -z "${warp_exists}" ]]; then
+  if [[ "$WARP_ENABLED" == true && -z "${warp_exists}" ]]; then
     log "WARP outbound not found. Registering a new free Cloudflare WARP account ..."
     
     # Generate X25519 keypair inside the container
@@ -413,56 +431,23 @@ ensure_warp_configuration() {
         }]
         ' <<<"${xray_setting}"
     )"
-  else
+  elif [[ "$WARP_ENABLED" == true ]]; then
     log "WARP outbound already configured."
+  else
+    log "WARP is disabled; default traffic uses direct."
   fi
 
-  # 2. Re-arrange and enforce routing rules order strictly as per README:
-  # 1. api -> api
-  # 2. geoip:ru -> blocked
-  # 3. geoip:private -> blocked
-  # 4. bittorrent -> blocked
-  # 5. TCP,UDP -> warp
-  log "Enforcing Xray routing rules order strictly ..."
-  updated_xray_setting="$(
-    jq -c '
-      .routing = (.routing // {}) |
-      .routing.rules = [
-        {
-          type: "field",
-          inboundTag: ["api"],
-          outboundTag: "api"
-        },
-        {
-          type: "field",
-          ip: ["geoip:ru"],
-          outboundTag: "blocked"
-        },
-        {
-          type: "field",
-          ip: ["geoip:private"],
-          outboundTag: "blocked"
-        },
-        {
-          type: "field",
-          protocol: ["bittorrent"],
-          outboundTag: "blocked"
-        },
-        {
-          type: "field",
-          network: "tcp,udp",
-          outboundTag: "warp"
-        }
-      ]
-    ' <<<"${xray_setting}"
-  )"
+  local fallback_tag=direct
+  [[ "$WARP_ENABLED" == true ]] && fallback_tag=warp
+  log "Applying routing: OpenAI -> ${PROTON_WG_CONFIG:+Proton; other traffic -> }${fallback_tag} ..."
+  updated_xray_setting="$(build_task_routing "$xray_setting" "$PROTON_OUTBOUND_JSON" "$fallback_tag")"
 
   if [[ "$(jq -cS '.' <<<"${xray_setting}")" == "$(jq -cS '.' <<<"${updated_xray_setting}")" ]]; then
     log "Xray settings and routing rules are already in the correct state."
     return 0
   fi
 
-  log "Applying updated Xray template settings (WARP outbound and routing rules) ..."
+  log "Applying updated Xray template settings ..."
   update_resp="$(panel_update_xray_setting "${updated_xray_setting}" "${outbound_test_url}" || true)"
   ensure_success "${update_resp}" "update Xray settings"
 }
@@ -510,6 +495,16 @@ ensure_subscription_urls() {
 }
 
 main() {
+  if [[ "${1:-}" == "--routing-only" ]]; then
+    # Existing deployment: no credential reset, subscription changes or new inbounds.
+    wait_for_panel
+    login_panel
+    ensure_outbound_configuration
+    docker compose restart vless
+    wait_for_panel
+    log "Routing updated."
+    return 0
+  fi
   log "Ensuring vless container is running ..."
   docker compose up -d vless
 
@@ -538,7 +533,7 @@ main() {
   login_panel
 
   ensure_subscription_urls
-  ensure_warp_configuration
+  ensure_outbound_configuration
 
   log "Creating Reality inbound on port 443..."
   local keys_resp priv_key pub_key short_id client_id email sub_id settings stream sniffing
@@ -572,4 +567,6 @@ main() {
   log "Panel (HTTPS): https://${SELF_SNI_DOMAIN}/${XUI_WEBPATH}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

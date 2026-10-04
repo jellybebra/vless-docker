@@ -1,11 +1,11 @@
 # VLESS + Traefik Docker Stack
 
-Связка `3x-ui` (VLESS TCP REALITY), `warp` и `traefik` через `docker compose`. 
+Связка `3x-ui` (VLESS TCP REALITY) и `traefik` через `docker compose`, с опциональными Proton VPN и WARP.
 
 **Особенности сборки:**
 * Автоматическая выписка и обновление SSL-сертификатов (Let's Encrypt).
 * Автоматически скачивает фейковый сайт. 
-* Автоматически настраивает Cloudflare WARP и маршрутизацию против раскрытия реального IP-адреса сервера.
+* Направляет трафик напрямую по умолчанию. Cloudflare WARP включается только через `WARP_ENABLED=true`.
 
 ---
 
@@ -65,7 +65,7 @@ docker compose -f traefik.web.yml up -d
    ```bash
    mkdir -p /opt/vless && cd /opt/vless
    ```
-2. Создайте файл [docker-compose.yml](docker-compose.yml), [entrypoint.sh](entrypoint.sh) и [.env](.env.example), заполнив данные от панели и домена.
+2. Скопируйте [docker-compose.yml](docker-compose.yml), [entrypoint.sh](entrypoint.sh), [proton-routing.sh](proton-routing.sh) и [.env](.env.example), заполнив данные от панели и домена.
 3. Запустите скрипт автоматической настройки на хосте:
    ```bash
    bash entrypoint.sh
@@ -74,6 +74,84 @@ docker compose -f traefik.web.yml up -d
    ```text
    https://<SELF_SNI_DOMAIN>/<XUI_WEBPATH>
    ```
+
+### ChatGPT через Proton VPN
+
+Опциональный выход `proton-openai` направляет домены `chatgpt.com`, `openai.com`,
+`oaistatic.com`, `oaiusercontent.com` и `chat.com` (включая поддомены) через Proton.
+Остальной трафик идёт напрямую. WARP выключен по умолчанию и используется для
+остального трафика только при `WARP_ENABLED=true`. Существующие правила блокировки
+сохраняют приоритет, пользовательские правила сохраняются перед общим выходом.
+Если Proton недоступен, совпавший трафик не переключается на другой выход автоматически.
+Для разрешения этих доменов добавляется DNS из `.conf` с отдельным правилом
+через Proton; остальные настройки DNS сохраняются.
+
+1. Создайте бесплатный аккаунт [Proton VPN](https://protonvpn.com/free-vpn).
+   В **Downloads → WireGuard configuration** скачайте конфигурацию бесплатного
+   сервера в США. Если такого сервера нет в генераторе, проверьте Канаду, Японию,
+   Сингапур или Мексику. Страну проверяйте в кабинете, она не определяется по имени файла.
+2. На сервере положите файл рядом со скриптом в `secrets/proton-us.conf`:
+
+   ```bash
+   mkdir -p secrets
+   chmod 700 secrets
+   # Скопируйте скачанный .conf в secrets/proton-us.conf
+   chmod 600 secrets/proton-us.conf
+   ```
+
+   Файл содержит приватный ключ: не публикуйте его. `secrets/` и `*.conf`
+   исключены из Git. Файл читается на хосте, дополнительный контейнер не требуется.
+   Proton на вашем компьютере запускать не нужно: соединение устанавливает
+   VLESS-сервер. Если кабинет Proton недоступен напрямую, попробуйте открыть
+   его через существующий VLESS/WARP.
+3. В `.env` задайте путь (относительно текущей папки или абсолютный):
+
+   ```dotenv
+   PROTON_WG_CONFIG=secrets/proton-us.conf
+   WARP_ENABLED=false
+   ```
+
+4. Для **существующего** развёртывания выполните из папки с Compose и `.env`:
+
+   ```bash
+   bash entrypoint.sh --routing-only
+   ```
+
+   Нужны `bash`, `jq`, `openssl` и Docker Compose. Данные входа и путь панели в
+   `.env` должны соответствовать работающей панели. Команда обновляет маршрутизацию
+   и перезапускает VLESS, кратковременно прерывая подключения. Она не создаёт
+   новых клиентов и не меняет пароли, URL подписок или входящие подключения.
+   Для новой установки используйте обычный `bash entrypoint.sh`.
+
+5. Проверьте **на клиенте через VLESS** открытие ChatGPT, вход, загрузку файлов
+   и голос, если используете его. В 3x-ui проверьте наличие выхода `proton-openai`
+   и правила OpenAI перед общим правилом `direct`. Обычная проверка IP на стороннем
+   сайте покажет IP VLESS-сервера — это ожидаемо при маршрутизации только доменов
+   OpenAI (или IP WARP, если вы явно включили WARP).
+
+Маршрутизация по доменам требует, чтобы клиент передавал имя назначения либо
+сниффинг Xray определял его. Для QUIC нужен сниффинг `quic` на существующем входе.
+Голос/WebRTC и запросы к IP без имени могут не попасть под доменное правило;
+это нужно проверить на реальном клиенте, список доменов не гарантирует охват
+всех будущих соединений Dots. Настройки существующих входов команда не меняет.
+
+В `.conf` поддерживается один peer, IPv4 default route `0.0.0.0/0`, DNS-серверы
+в виде IP, MTU 1280–1420 и стандартные ключи WireGuard. Shell hooks из `.conf`
+не выполняются. Пустой `PROTON_WG_CONFIG` с повторным `--routing-only` удаляет
+управляемый выход Proton и возвращает этот трафик на обычный выход.
+
+VPN меняет сетевой выход, но не тариф или право аккаунта на Dots.
+[Доступность Dots](https://learn.chatgpt.com/docs/dots#access) зависит также от
+возраста, региона и постепенного включения функции. Для личного Pro сейчас
+исключены ЕЭЗ, Великобритания и Швейцария.
+
+Проверка без настоящего аккаунта Proton (искусственные ключи, без VPN-соединения):
+
+```bash
+docker run --rm --mount "type=bind,source=$(pwd),target=/work,readonly" \
+  --workdir /work --entrypoint sh ghcr.io/mhsanaei/3x-ui:3.2.5 \
+  -c 'apk add --no-cache jq >/dev/null && bash tests/proton-routing.sh'
+```
 
 ### Cloudflare Tunnel
 
