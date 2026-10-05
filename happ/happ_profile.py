@@ -72,10 +72,11 @@ def build(subscription, port=10808):
             "tag": "socks", "listen": "127.0.0.1", "port": port,
             "protocol": "socks", "settings": {"auth": "noauth", "udp": True},
             "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"],
-                         "routeOnly": False},
+                         "routeOnly": True},
         }],
         "outbounds": [
-            {"tag": "direct", "protocol": "freedom", "settings": {}},
+            {"tag": "direct", "protocol": "freedom", "settings": {},
+             "streamSettings": {"sockopt": {"domainStrategy": "UseIPv4"}}},
             proxy,
             {"tag": "youtube-dpi", "protocol": "freedom",
              "settings": {"domainStrategy": "UseIPv4", "fragment": {
@@ -100,5 +101,4 @@ def build(subscription, port=10808):
             rule("direct", network="tcp,udp"),
         ]},
     }
-
 

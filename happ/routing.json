@@ -14,7 +14,11 @@
     "dns.google": "8.8.8.8"
   },
   "DirectSites": [
-    "geosite:private"
+    "geosite:private",
+    "full:cable.auth.com",
+    "full:cable.ua5v.com",
+    "full:app-site-association.cdn-apple.com",
+    "full:app-site-association.networking.apple"
   ],
   "DirectIp": [
     "geoip:private"
