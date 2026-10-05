@@ -71,6 +71,27 @@ services:
       - "traefik.http.routers.vless-sub.service=vless-sub-svc"
       - "traefik.http.services.vless-sub-svc.loadbalancer.server.port=2096"
 
+  happ:
+    build: ./happ
+    restart: unless-stopped
+    read_only: true
+    environment:
+      HAPP_SUB_BASE_URL: ${HAPP_SUB_BASE_URL:-http://vless:2096/sub/}
+      HAPP_SUB_HOST: ${SELF_SNI_DOMAIN}
+    depends_on:
+      - vless
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vless-happ.rule=Host(`${SELF_SNI_DOMAIN}`) && PathPrefix(`/happ/`)"
+      - "traefik.http.routers.vless-happ.entrypoints=loopback"
+      - "traefik.http.routers.vless-happ.tls=true"
+      - "traefik.http.routers.vless-happ.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.vless-happ.priority=190"
+      - "traefik.http.routers.vless-happ.service=vless-happ-svc"
+      - "traefik.http.services.vless-happ-svc.loadbalancer.server.port=8081"
+
 volumes:
   fakesite_data:
   xui_data:

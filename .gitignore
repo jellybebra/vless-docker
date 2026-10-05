@@ -3,3 +3,5 @@
 data/
 secrets/
 *.conf
+.private/
+__pycache__/

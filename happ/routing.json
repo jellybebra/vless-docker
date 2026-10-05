@@ -1,0 +1,62 @@
+{
+  "Name": "v2rayN - iPhone",
+  "GlobalProxy": "false",
+  "RouteOrder": "block-direct-proxy",
+  "RemoteDNSType": "DoH",
+  "RemoteDNSDomain": "https://dns.google/dns-query",
+  "RemoteDNSIP": "8.8.8.8",
+  "DomesticDNSType": "DoU",
+  "DomesticDNSDomain": "",
+  "DomesticDNSIP": "77.88.8.8",
+  "Geoipurl": "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat",
+  "Geositeurl": "https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat",
+  "DnsHosts": {
+    "dns.google": "8.8.8.8"
+  },
+  "DirectSites": [
+    "geosite:private"
+  ],
+  "DirectIp": [
+    "geoip:private"
+  ],
+  "ProxySites": [
+    "geosite:ru-blocked",
+    "geosite:google",
+    "domain:chatgpt.com",
+    "domain:openai.com",
+    "domain:oaistatic.com",
+    "domain:oaiusercontent.com",
+    "domain:oaistatsig.com",
+    "full:cdn.openaimerge.com",
+    "full:challenges.cloudflare.com",
+    "full:cdn.workos.com",
+    "full:forwarder.workos.com",
+    "full:setup.workos.com",
+    "full:images.workoscdn.com",
+    "full:workos.imgix.net",
+    "domain:intercom.io",
+    "domain:intercomcdn.com",
+    "domain:ct.sendgrid.net",
+    "full:js.stripe.com",
+    "full:o207216.ingest.sentry.io",
+    "full:o33249.ingest.sentry.io",
+    "full:rum.browser-intake-datadoghq.com",
+    "full:humb.apple.com",
+    "domain:chatgpt.livekit.cloud",
+    "domain:host.livekit.cloud",
+    "domain:turn.livekit.cloud",
+    "regexp:^chatgpt-async-webps-prod-\\S+-\\d+\\.webpubsub\\.azure\\.com$"
+  ],
+  "ProxyIp": [
+    "1.0.0.1",
+    "1.1.1.1",
+    "8.8.8.8",
+    "8.8.4.4",
+    "geoip:ru-blocked"
+  ],
+  "BlockSites": [],
+  "BlockIp": [],
+  "DomainStrategy": "IPOnDemand",
+  "FakeDNS": "false",
+  "UseChunkFiles": "true"
+}

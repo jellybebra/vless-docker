@@ -65,7 +65,7 @@ docker compose -f traefik.web.yml up -d
    ```bash
    mkdir -p /opt/vless && cd /opt/vless
    ```
-2. Скопируйте [docker-compose.yml](docker-compose.yml), [entrypoint.sh](entrypoint.sh), [proton-routing.sh](proton-routing.sh) и [.env](.env.example), заполнив данные от панели и домена.
+2. Скопируйте [docker-compose.yml](docker-compose.yml), [entrypoint.sh](entrypoint.sh), [proton-routing.sh](proton-routing.sh), папку [happ](happ) и [.env](.env.example), заполнив данные от панели и домена.
 3. Запустите скрипт автоматической настройки на хосте:
    ```bash
    bash entrypoint.sh
@@ -74,6 +74,20 @@ docker compose -f traefik.web.yml up -d
    ```text
    https://<SELF_SNI_DOMAIN>/<XUI_WEBPATH>
    ```
+
+### Подписка Happ
+
+1. Для существующего развёртывания скопируйте обновлённый `docker-compose.yml` и папку `happ` в `/opt/vless`.
+2. Из этой папки запустите сервис:
+
+   ```bash
+   docker compose up -d --build --no-deps happ
+   ```
+
+3. Если 3x-ui использует другой путь или порт подписок, задайте `HAPP_SUB_BASE_URL` в `.env` и повторите запуск.
+4. Используйте подписку с серверами VLESS TCP REALITY.
+5. В ссылке пользователя замените `/sub/` на `/happ/`: `https://example.com/sub/TOKEN` → `https://example.com/happ/TOKEN`.
+6. Добавьте полученную ссылку в Happ и подключитесь к одному из серверов **iPhone - YouTube DPI**.
 
 ### ChatGPT через Proton VPN
 
