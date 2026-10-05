@@ -506,7 +506,7 @@ main() {
     return 0
   fi
   log "Ensuring vless container is running ..."
-  docker compose up -d vless
+  docker compose up -d --build vless happ
 
   log "Ensuring curl, jq, and openssl are installed inside the container ..."
   docker compose exec -T vless apk add --no-cache curl jq openssl bash >/dev/null 2>&1 || true
