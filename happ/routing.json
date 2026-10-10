@@ -26,6 +26,7 @@
   "ProxySites": [
     "geosite:ru-blocked",
     "geosite:google",
+    "geosite:supercell",
     "domain:chatgpt.com",
     "domain:openai.com",
     "domain:oaistatic.com",
