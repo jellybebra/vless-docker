@@ -89,6 +89,12 @@ docker compose -f traefik.web.yml up -d
 5. В ссылке пользователя замените `/sub/` на `/happ/`: `https://example.com/sub/TOKEN` → `https://example.com/happ/TOKEN`.
 6. Добавьте полученную ссылку в Happ и подключитесь к одному из серверов **iPhone - YouTube DPI**.
 
+Маршрутизация включает `geosite:supercell`, чтобы домены Brawl Stars и Supercell ID
+шли через VPN. После обновления сервиса обновите подписку и GeoSite в Happ,
+переподключитесь и перезапустите игру. На Android игра также должна быть включена
+в VPN, если используется выбор приложений. Правило по доменам не гарантирует
+охват игровых соединений к IP без имени; для диагностики сравните с полным туннелем.
+
 ### ChatGPT через Proton VPN
 
 Опциональный выход `proton-openai` направляет домены `chatgpt.com`, `openai.com`,
