@@ -22,7 +22,7 @@ from happ_profile import build
 
 @unittest.skipUnless(os.environ.get("XRAY_BIN"), "Set XRAY_BIN to test real Xray routing")
 class XrayRoutingTests(unittest.TestCase):
-    def test_ip_only_game_connections_use_proxy(self):
+    def test_game_and_https_routing(self):
         uri = ("vless://11111111-1111-4111-8111-111111111111@example.com:443"
                "?type=tcp&security=reality&sni=example.com"
                "&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -69,13 +69,24 @@ class XrayRoutingTests(unittest.TestCase):
                         ("tcp", "192.168.1.50", 9339, "direct"),
                         ("udp", "192.168.1.51", 9339, "direct"),
                         ("tcp", "93.184.216.36", 9440, "direct"),
+                        ("udp", "93.184.216.37", 443, "block"),
+                        ("udp", "192.168.1.52", 443, "direct"),
+                        ("tcp", "93.184.216.38", 443, "direct"),
+                        ("tcp", "www.youtube.com", 443, "youtube-dpi"),
+                        ("tcp", "rr1.googlevideo.com", 443, "youtube-dpi"),
+                        ("udp", "rr1.googlevideo.com", 443, "block"),
                     ]
                     for network, address, destination_port, expected in cases:
                         with self.subTest(network=network, address=address, port=destination_port):
                             with socket.create_connection(("127.0.0.1", port), timeout=3) as control:
                                 control.sendall(b"\x05\x01\x00")
                                 self.assertEqual(self.read_exact(control, 2), b"\x05\x00")
-                                target = b"\x01" + socket.inet_aton(address) + struct.pack("!H", destination_port)
+                                try:
+                                    target = b"\x01" + socket.inet_aton(address)
+                                except OSError:
+                                    hostname = address.encode("ascii")
+                                    target = b"\x03" + bytes([len(hostname)]) + hostname
+                                target += struct.pack("!H", destination_port)
                                 command = b"\x01" if network == "tcp" else b"\x03"
                                 request_target = target if network == "tcp" else b"\x01" + b"\0" * 6
                                 control.sendall(b"\x05" + command + b"\x00" + request_target)

@@ -93,8 +93,9 @@ def build(subscription, port=10808):
             # Cover IP-only login/game traffic; private destinations stay direct.
             # Other apps connecting to this destination port also use the proxy.
             rule("proxy", network="tcp,udp", port="9339"),
-            # TLS fragmentation cannot handle QUIC. Reject only YouTube UDP/443.
-            rule("block", domain=YOUTUBE, network="udp", port="443"),
+            # TLS fragmentation cannot handle QUIC; sniffing may miss its domain.
+            # Block UDP/443 even for IP-only traffic, after the direct exceptions.
+            rule("block", network="udp", port="443"),
             rule("youtube-dpi", domain=YOUTUBE, network="tcp"),
             rule("proxy", domain=DISCORD),
             # IP-only Discord voice traffic cannot be matched by domain.
