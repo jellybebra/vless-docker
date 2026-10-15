@@ -2,6 +2,10 @@
 
 Связка `3x-ui` (VLESS TCP REALITY) и `traefik` через `docker compose`, с опциональными Proton VPN и WARP.
 
+Отдельный [WireGuard-сервер с панелью wg-easy](wireguard/README.md) запускается
+своим Compose-проектом. Поддерживается перенос существующего WARP → WireGuard
+из `device-setup` с сохранением ключей, peers, MTU и выходного IP.
+
 **Особенности сборки:**
 * Автоматическая выписка и обновление SSL-сертификатов (Let's Encrypt).
 * Автоматически скачивает фейковый сайт. 

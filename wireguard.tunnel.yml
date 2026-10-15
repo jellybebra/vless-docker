@@ -1,0 +1,21 @@
+services:
+  panel-tunnel:
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [tunnel, --config, /etc/cloudflared/config.yml, run]
+    volumes:
+      - ./.private/panel-tunnel.yml:/etc/cloudflared/config.yml:ro
+      - ./.private/panel-tunnel.json:/etc/cloudflared/credentials.json:ro
+    networks: [wg]
+    depends_on:
+      wg-easy:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
