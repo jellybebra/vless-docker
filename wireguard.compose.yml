@@ -1,0 +1,67 @@
+# Standalone project: does not restart VLESS/Traefik.
+x-wg-image: &wg-image ghcr.io/wg-easy/wg-easy:15.4.0@sha256:0e7bc9d34e86ddcaa92bc700d4d7dc9b33291dbc07ac8d13382f7c2095f949ec
+
+services:
+  wg-easy:
+    image: *wg-image
+    restart: unless-stopped
+    environment:
+      PORT: "51821"
+      HOST: "0.0.0.0"
+      INSECURE: ${WG_INSECURE:-false}
+      DISABLE_IPV6: "true"
+      # Avoid upstream's default command logging, which can include key material.
+      DEBUG: Server,WireGuard
+      INIT_ENABLED: ${WG_INIT_ENABLED:-false}
+      INIT_USERNAME: ${WG_INIT_USERNAME:-}
+      INIT_PASSWORD: ${WG_INIT_PASSWORD:-}
+      INIT_HOST: ${WG_ENDPOINT:-}
+      INIT_PORT: ${WG_PORT:-51871}
+      INIT_DNS: "1.1.1.1,1.0.0.1"
+      INIT_ALLOWED_IPS: "0.0.0.0/0"
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.src_valid_mark: "1"
+      net.ipv6.conf.all.disable_ipv6: "1"
+    ports:
+      - "${WG_BIND_IP:-0.0.0.0}:${WG_PORT:-51871}:${WG_PORT:-51871}/udp"
+      # Expose the panel only through an HTTPS proxy or an SSH tunnel.
+      - "127.0.0.1:${WG_UI_PORT:-51821}:51821/tcp"
+    volumes:
+      - wg_data:/etc/wireguard
+      - ./wireguard/firewall.sh:/opt/wg-easy/firewall.sh:ro
+    networks:
+      - wg
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+    healthcheck:
+      test: [CMD-SHELL, "wg show wg0 >/dev/null && node -e 'fetch(\"http://127.0.0.1:51821/api/auth/methods\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Stop wg-easy before importing. Dry run unless --apply is explicitly supplied.
+  import:
+    image: *wg-image
+    profiles: [tools]
+    network_mode: none
+    entrypoint: [node, /tools/import.mjs]
+    volumes:
+      - wg_data:/etc/wireguard
+      - ./wireguard:/tools:ro
+      - ${WG_IMPORT_DIR:-./.private/wireguard-import}:/migration:ro
+
+volumes:
+  wg_data:
+
+networks:
+  wg:
+    driver: bridge
+    enable_ipv6: false
+
