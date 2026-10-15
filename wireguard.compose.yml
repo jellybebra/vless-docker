@@ -64,4 +64,3 @@ networks:
   wg:
     driver: bridge
     enable_ipv6: false
-
