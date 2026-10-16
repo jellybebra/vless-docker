@@ -23,6 +23,42 @@ from happ_profile import build
 @unittest.skipUnless(os.environ.get("XRAY_BIN"), "Set XRAY_BIN to test real Xray routing")
 class XrayRoutingTests(unittest.TestCase):
     def test_game_and_https_routing(self):
+        self.check_routing("selective", [
+            ("tcp", "93.184.216.34", 9339, "proxy"),
+            ("udp", "93.184.216.35", 9339, "proxy"),
+            ("tcp", "192.168.1.50", 9339, "direct"),
+            ("udp", "192.168.1.51", 9339, "direct"),
+            ("tcp", "93.184.216.36", 9440, "direct"),
+            ("udp", "93.184.216.37", 443, "block"),
+            ("udp", "192.168.1.52", 443, "direct"),
+            ("tcp", "93.184.216.38", 443, "direct"),
+            ("tcp", "www.youtube.com", 443, "youtube-dpi"),
+            ("tcp", "rr1.googlevideo.com", 443, "youtube-dpi"),
+            ("udp", "rr1.googlevideo.com", 443, "block"),
+        ])
+
+    def test_all_except_ru_routing(self):
+        self.check_routing("all-except-ru", [
+            ("tcp", "77.88.8.8", 443, "direct"),
+            ("udp", "77.88.8.8", 443, "direct"),
+            ("tcp", "192.168.1.50", 9339, "direct"),
+            ("udp", "192.168.1.51", 443, "direct"),
+            ("tcp", "93.184.216.36", 9440, "proxy"),
+            ("udp", "93.184.216.37", 443, "proxy"),
+            ("udp", "93.184.216.38", 50001, "proxy"),
+            ("tcp", "www.youtube.com", 443, "proxy"),
+            ("udp", "rr1.googlevideo.com", 443, "proxy"),
+            # Russian domains stay direct even if their CDN is abroad.
+            ("tcp", "example.ru", 443, "direct"),
+            ("tcp", "yandex.com", 443, "direct"),
+            # A foreign domain can resolve to a Russian or private IP.
+            ("tcp", "russian-happ-routing-check.com", 443, "direct"),
+            ("tcp", "local-happ-routing-check.com", 443, "direct"),
+            ("tcp", "foreign-happ-routing-check.com", 443, "proxy"),
+            ("tcp", "cable.auth.com", 443, "proxy"),
+        ])
+
+    def check_routing(self, mode, cases):
         uri = ("vless://11111111-1111-4111-8111-111111111111@example.com:443"
                "?type=tcp&security=reality&sni=example.com"
                "&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -31,7 +67,17 @@ class XrayRoutingTests(unittest.TestCase):
             port = reservation.getsockname()[1]
         with patch("happ_profile.socket.getaddrinfo", return_value=[
                 (2, 1, 6, "", ("192.0.2.1", 443))]):
-            config = build(uri, port=port)
+            config = build(uri, port=port, mode=mode)
+        # Deterministic DNS without Internet access, including geo-IP fallback.
+        config["dns"]["hosts"].update({
+            "www.youtube.com": "93.184.216.34",
+            "rr1.googlevideo.com": "93.184.216.34",
+            "example.ru": "93.184.216.34", "yandex.com": "93.184.216.34",
+            "russian-happ-routing-check.com": "77.88.8.8",
+            "local-happ-routing-check.com": "192.168.1.50",
+            "foreign-happ-routing-check.com": "93.184.216.34",
+            "cable.auth.com": "93.184.216.34",
+        })
         with tempfile.TemporaryDirectory(prefix="happ-xray-") as folder:
             root = Path(folder)
             config_path = root / "config.json"
@@ -63,19 +109,6 @@ class XrayRoutingTests(unittest.TestCase):
                                 errors.seek(0)
                                 self.fail("Xray failed to start: " + errors.read())
                             time.sleep(.05)
-                    cases = [
-                        ("tcp", "93.184.216.34", 9339, "proxy"),
-                        ("udp", "93.184.216.35", 9339, "proxy"),
-                        ("tcp", "192.168.1.50", 9339, "direct"),
-                        ("udp", "192.168.1.51", 9339, "direct"),
-                        ("tcp", "93.184.216.36", 9440, "direct"),
-                        ("udp", "93.184.216.37", 443, "block"),
-                        ("udp", "192.168.1.52", 443, "direct"),
-                        ("tcp", "93.184.216.38", 443, "direct"),
-                        ("tcp", "www.youtube.com", 443, "youtube-dpi"),
-                        ("tcp", "rr1.googlevideo.com", 443, "youtube-dpi"),
-                        ("udp", "rr1.googlevideo.com", 443, "block"),
-                    ]
                     for network, address, destination_port, expected in cases:
                         with self.subTest(network=network, address=address, port=destination_port):
                             with socket.create_connection(("127.0.0.1", port), timeout=3) as control:
