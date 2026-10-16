@@ -15,6 +15,11 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "happ"))
 from server import Server, MAX_SUBSCRIPTION_BYTES, MAX_PROFILES
 
+EXPECTED_NAMES = [
+    "Заблокированное + YouTube без рекламы", "Всё, кроме РФ",
+    "Всё", "Всё, кроме РФ + YouTube без рекламы",
+]
+
 
 def uri(client="11111111-1111-4111-8111-111111111111", host="example.com", name="Server"):
     return (f"vless://{client}@{host}:443?type=tcp&security=reality"
@@ -93,12 +98,12 @@ class SubscriptionTests(unittest.TestCase):
             status, headers, data = self.get()
             self.assertEqual(status, 200)
             profiles = json.loads(data)
-            self.assertEqual([p["remarks"] for p in profiles], [
-                "Заблокированное + YouTube без рекламы", "Всё, кроме РФ"])
+            self.assertEqual([p["remarks"] for p in profiles], EXPECTED_NAMES)
             self.assertEqual([p["meta"]["serverDescription"] for p in profiles],
-                             ["Server", "Server"])
+                             ["Server"] * 4)
             profile = profiles[0]
-            self.assertEqual(profiles[1]["outbounds"][1], profile["outbounds"][1])
+            for variant in profiles[1:]:
+                self.assertEqual(variant["outbounds"][1], profile["outbounds"][1])
             self.assertEqual(profile["outbounds"][1]["settings"]["vnext"][0]["address"], "example.com")
             self.assertEqual(profile["outbounds"][2]["settings"]["fragment"], {
                 "packets": "tlshello", "length": "1-3", "interval": "1-2"})
@@ -120,15 +125,19 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertNotEqual(first, second)
         profiles = json.loads(second)
-        self.assertEqual(len(profiles), 4)
-        for profile in profiles[:2]:
+        self.assertEqual(len(profiles), 8)
+        for profile in profiles[:4]:
             server = profile["outbounds"][1]["settings"]["vnext"][0]
             self.assertEqual(server["address"], "new.example.com")
             self.assertEqual(server["users"][0]["id"], "22222222-2222-4222-8222-222222222222")
             self.assertEqual(profile["dns"]["hosts"], {"new.example.com": "192.0.2.1"})
             self.assertEqual(profile["meta"]["serverDescription"], "New")
-        self.assertEqual([p["meta"]["serverDescription"] for p in profiles[2:]],
-                         ["Second", "Second"])
+        self.assertEqual([p["meta"]["serverDescription"] for p in profiles[4:]],
+                         ["Second"] * 4)
+        for profile in profiles[4:]:
+            server = profile["outbounds"][1]["settings"]["vnext"][0]
+            self.assertEqual(server["address"], "example.com")
+            self.assertEqual(server["users"][0]["id"], "11111111-1111-4111-8111-111111111111")
 
     def test_shared_geo_assets_cover_every_variant(self):
         _, headers, body = self.get()
@@ -147,8 +156,7 @@ class SubscriptionTests(unittest.TestCase):
         Upstream.body = uri().split("#")[0].encode()
         status, _, body = self.get()
         self.assertEqual(status, 200)
-        self.assertEqual([p["remarks"] for p in json.loads(body)], [
-            "Заблокированное + YouTube без рекламы", "Всё, кроме РФ"])
+        self.assertEqual([p["remarks"] for p in json.loads(body)], EXPECTED_NAMES)
 
     def test_upstream_domain_restriction_uses_configured_host(self):
         Upstream.required_host = "subscription.example.com"

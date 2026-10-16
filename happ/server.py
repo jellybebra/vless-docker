@@ -32,7 +32,7 @@ def routing_header():
     routing = json.loads(Path(__file__).with_name("routing.json").read_text())
     routing.update({
         "Name": "Happ", "UseChunkFiles": "true",
-        # Refresh existing installations and retain geo categories for BOTH
+        # Refresh existing installations and retain geo categories for all
         # JSON variants when Happ creates its memory-saving truncated files.
         "LastUpdated": "1792108800",
         "RemoteDNSType": "DoH", "RemoteDNSDomain": "https://1.1.1.1/dns-query",
