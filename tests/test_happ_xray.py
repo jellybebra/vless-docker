@@ -58,6 +58,51 @@ class XrayRoutingTests(unittest.TestCase):
             ("tcp", "cable.auth.com", 443, "proxy"),
         ])
 
+    def test_all_routing(self):
+        self.check_routing("all", [
+            ("tcp", "77.88.8.8", 443, "proxy"),
+            ("udp", "77.88.8.8", 443, "proxy"),
+            ("tcp", "example.ru", 443, "proxy"),
+            ("tcp", "yandex.com", 443, "proxy"),
+            ("tcp", "russian-happ-routing-check.com", 443, "proxy"),
+            ("tcp", "foreign-happ-routing-check.com", 443, "proxy"),
+            ("tcp", "www.youtube.com", 443, "proxy"),
+            ("udp", "rr1.googlevideo.com", 443, "proxy"),
+            ("tcp", "rr2.googlevideo.com", 443, "proxy"),
+            ("udp", "93.184.216.37", 443, "proxy"),
+            ("udp", "93.184.216.38", 50001, "proxy"),
+            ("tcp", "192.168.1.50", 9339, "direct"),
+            ("udp", "192.168.1.51", 443, "direct"),
+            ("tcp", "local-happ-routing-check.com", 443, "direct"),
+            ("tcp", "cable.auth.com", 443, "proxy"),
+        ])
+
+    def test_all_except_ru_with_youtube_dpi_routing(self):
+        self.check_routing("all-except-ru-youtube", [
+            ("tcp", "77.88.8.8", 443, "direct"),
+            ("udp", "77.88.8.8", 443, "direct"),
+            ("tcp", "example.ru", 443, "direct"),
+            ("udp", "example.ru", 443, "direct"),
+            ("tcp", "yandex.com", 443, "direct"),
+            ("tcp", "russian-happ-routing-check.com", 443, "direct"),
+            ("tcp", "foreign-happ-routing-check.com", 443, "proxy"),
+            ("tcp", "www.youtube.com", 443, "youtube-dpi"),
+            ("tcp", "rr1.googlevideo.com", 443, "youtube-dpi"),
+            ("udp", "rr1.googlevideo.com", 443, "block"),
+            # YouTube's Russian CDN must still use fragmentation and no QUIC.
+            ("tcp", "rr2.googlevideo.com", 443, "youtube-dpi"),
+            ("udp", "rr2.googlevideo.com", 443, "block"),
+            ("udp", "93.184.216.37", 443, "block"),
+            ("tcp", "93.184.216.37", 443, "proxy"),
+            ("udp", "93.184.216.38", 50001, "proxy"),
+            ("tcp", "192.168.1.50", 9339, "direct"),
+            ("udp", "192.168.1.51", 443, "direct"),
+            ("tcp", "local-happ-routing-check.com", 443, "direct"),
+            ("tcp", "rr3.googlevideo.com", 443, "direct"),
+            ("udp", "rr3.googlevideo.com", 443, "direct"),
+            ("tcp", "cable.auth.com", 443, "proxy"),
+        ])
+
     def check_routing(self, mode, cases):
         uri = ("vless://11111111-1111-4111-8111-111111111111@example.com:443"
                "?type=tcp&security=reality&sni=example.com"
@@ -72,6 +117,8 @@ class XrayRoutingTests(unittest.TestCase):
         config["dns"]["hosts"].update({
             "www.youtube.com": "93.184.216.34",
             "rr1.googlevideo.com": "93.184.216.34",
+            "rr2.googlevideo.com": "77.88.8.8",
+            "rr3.googlevideo.com": "192.168.1.50",
             "example.ru": "93.184.216.34", "yandex.com": "93.184.216.34",
             "russian-happ-routing-check.com": "77.88.8.8",
             "local-happ-routing-check.com": "192.168.1.50",

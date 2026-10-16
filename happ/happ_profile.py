@@ -10,6 +10,8 @@ import uuid
 PROFILE_NAMES = {
     "selective": "Заблокированное + YouTube без рекламы",
     "all-except-ru": "Всё, кроме РФ",
+    "all": "Всё",
+    "all-except-ru-youtube": "Всё, кроме РФ + YouTube без рекламы",
 }
 RU_DIRECT_SITES = [
     "geosite:category-ru", "geosite:tld-ru", "geosite:ru-available-only-inside",
@@ -116,18 +118,40 @@ def build(subscription, port=10808, *, mode="selective"):
             rule("direct", network="tcp,udp"),
         ]},
     }
-    if mode == "all-except-ru":
+    if mode != "selective":
         # Keep each JSON configuration self-contained. Happ's routing header
         # only supplies shared geo assets; it does not override these rules.
+        youtube_direct = mode == "all-except-ru-youtube"
+        outbound_tags = {"proxy", "direct", "dns-out"}
+        if youtube_direct:
+            outbound_tags.update(("youtube-dpi", "block"))
         config["outbounds"] = [
             out for out in config["outbounds"]
-            if out["tag"] in ("proxy", "direct", "dns-out")
+            if out["tag"] in outbound_tags
         ]
-        config["routing"] = {"domainStrategy": "IPOnDemand", "rules": [
+        direct_sites = ["geosite:private"]
+        direct_ips = ["geoip:private"]
+        if mode == "all-except-ru":
+            direct_sites += RU_DIRECT_SITES
+            direct_ips += RU_DIRECT_IP
+        rules = [
             rule("dns-out", port="53", network="tcp,udp"),
-            rule("direct", domain=["geosite:private"] + RU_DIRECT_SITES),
-            rule("direct", ip=["geoip:private"] + RU_DIRECT_IP),
-            rule("proxy", network="tcp,udp"),
-        ]}
+            rule("direct", domain=direct_sites),
+            rule("direct", ip=direct_ips),
+        ]
+        if youtube_direct:
+            rules += [
+                # Apply YouTube handling before Russia's IP exceptions: Google
+                # video caches may be located in Russia. Private IPs stay direct.
+                rule("block", domain=YOUTUBE, network="udp", port="443"),
+                rule("youtube-dpi", domain=YOUTUBE, network="tcp"),
+                rule("direct", domain=RU_DIRECT_SITES),
+                rule("direct", ip=RU_DIRECT_IP),
+                # Preserve the existing DPI mode's fallback for unrecognized
+                # QUIC, without blocking ordinary Russian or local UDP/443.
+                rule("block", network="udp", port="443"),
+            ]
+        rules.append(rule("proxy", network="tcp,udp"))
+        config["routing"] = {"domainStrategy": "IPOnDemand", "rules": rules}
     return config
 
