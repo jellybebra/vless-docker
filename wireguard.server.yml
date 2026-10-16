@@ -1,5 +1,0 @@
-# Add on the Linux server to retain the existing WireGuard exit IP.
-networks:
-  wg:
-    driver_opts:
-      com.docker.network.host_ipv4: ${WG_EGRESS_IPV4:?Set the existing WireGuard exit IPv4}
