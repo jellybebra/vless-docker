@@ -92,7 +92,13 @@ class SubscriptionTests(unittest.TestCase):
             Upstream.body = body
             status, headers, data = self.get()
             self.assertEqual(status, 200)
-            profile = json.loads(data)[0]
+            profiles = json.loads(data)
+            self.assertEqual([p["remarks"] for p in profiles], [
+                "Заблокированное + YouTube без рекламы", "Всё, кроме РФ"])
+            self.assertEqual([p["meta"]["serverDescription"] for p in profiles],
+                             ["Server", "Server"])
+            profile = profiles[0]
+            self.assertEqual(profiles[1]["outbounds"][1], profile["outbounds"][1])
             self.assertEqual(profile["outbounds"][1]["settings"]["vnext"][0]["address"], "example.com")
             self.assertEqual(profile["outbounds"][2]["settings"]["fragment"], {
                 "packets": "tlshello", "length": "1-3", "interval": "1-2"})
@@ -102,6 +108,8 @@ class SubscriptionTests(unittest.TestCase):
             self.assertEqual(routing["RemoteDNSIP"], "1.1.1.1")
             self.assertEqual(headers["Cache-Control"], "no-store")
             self.assertEqual(headers["profile-update-interval"], "1")
+            self.assertEqual(headers.get_content_type(), "application/json")
+            self.assertEqual(base64.b64decode(headers["profile-title"].split(":", 1)[1]), b"Happ")
         self.assertEqual(Upstream.calls, ["/sub/sample-token", "/sub/sample-token"])
 
     def test_refresh_updates_credentials_address_and_server_list(self):
@@ -112,11 +120,35 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertNotEqual(first, second)
         profiles = json.loads(second)
-        self.assertEqual(len(profiles), 2)
-        server = profiles[0]["outbounds"][1]["settings"]["vnext"][0]
-        self.assertEqual(server["address"], "new.example.com")
-        self.assertEqual(server["users"][0]["id"], "22222222-2222-4222-8222-222222222222")
-        self.assertEqual(profiles[0]["dns"]["hosts"], {"new.example.com": "192.0.2.1"})
+        self.assertEqual(len(profiles), 4)
+        for profile in profiles[:2]:
+            server = profile["outbounds"][1]["settings"]["vnext"][0]
+            self.assertEqual(server["address"], "new.example.com")
+            self.assertEqual(server["users"][0]["id"], "22222222-2222-4222-8222-222222222222")
+            self.assertEqual(profile["dns"]["hosts"], {"new.example.com": "192.0.2.1"})
+            self.assertEqual(profile["meta"]["serverDescription"], "New")
+        self.assertEqual([p["meta"]["serverDescription"] for p in profiles[2:]],
+                         ["Second", "Second"])
+
+    def test_shared_geo_assets_cover_every_variant(self):
+        _, headers, body = self.get()
+        routing = json.loads(base64.b64decode(headers["routing"].rsplit("/", 1)[1]))
+        available = set()
+        for field in ("DirectSites", "DirectIp", "ProxySites", "ProxyIp", "BlockSites", "BlockIp"):
+            available.update(routing[field])
+        for profile in json.loads(body):
+            for rule in profile["routing"]["rules"]:
+                for value in rule.get("domain", []) + rule.get("ip", []):
+                    if value.startswith(("geosite:", "geoip:")):
+                        self.assertIn(value, available)
+        self.assertGreater(int(routing["LastUpdated"]), 0)
+
+    def test_names_stay_exact_without_a_server_label(self):
+        Upstream.body = uri().split("#")[0].encode()
+        status, _, body = self.get()
+        self.assertEqual(status, 200)
+        self.assertEqual([p["remarks"] for p in json.loads(body)], [
+            "Заблокированное + YouTube без рекламы", "Всё, кроме РФ"])
 
     def test_upstream_domain_restriction_uses_configured_host(self):
         Upstream.required_host = "subscription.example.com"

@@ -7,6 +7,15 @@ import socket
 import urllib.parse
 import uuid
 
+PROFILE_NAMES = {
+    "selective": "Заблокированное + YouTube без рекламы",
+    "all-except-ru": "Всё, кроме РФ",
+}
+RU_DIRECT_SITES = [
+    "geosite:category-ru", "geosite:tld-ru", "geosite:ru-available-only-inside",
+]
+RU_DIRECT_IP = ["geoip:ru"]
+
 YOUTUBE = [
     "regexp:(^|\\.)youtube\\.[a-z.]+$",
     *["domain:" + d for d in (
@@ -59,12 +68,13 @@ def vless_outbound(subscription):
     return outbound, {uri.hostname: host_ip}
 
 
-def build(subscription, port=10808):
+def build(subscription, port=10808, *, mode="selective"):
+    name = PROFILE_NAMES[mode]
     base = json.loads(Path(__file__).with_name("routing.json").read_text())
     proxy, hosts = vless_outbound(subscription)
     rule = lambda tag, **fields: {"type": "field", **fields, "outboundTag": tag}
-    return {
-        "remarks": "iPhone - YouTube DPI (experimental)",
+    config = {
+        "remarks": name,
         "log": {"loglevel": "warning"},
         "dns": {"hosts": hosts, "servers": ["https://1.1.1.1/dns-query"],
                 "queryStrategy": "UseIPv4"},
@@ -106,4 +116,18 @@ def build(subscription, port=10808):
             rule("direct", network="tcp,udp"),
         ]},
     }
+    if mode == "all-except-ru":
+        # Keep each JSON configuration self-contained. Happ's routing header
+        # only supplies shared geo assets; it does not override these rules.
+        config["outbounds"] = [
+            out for out in config["outbounds"]
+            if out["tag"] in ("proxy", "direct", "dns-out")
+        ]
+        config["routing"] = {"domainStrategy": "IPOnDemand", "rules": [
+            rule("dns-out", port="53", network="tcp,udp"),
+            rule("direct", domain=["geosite:private"] + RU_DIRECT_SITES),
+            rule("direct", ip=["geoip:private"] + RU_DIRECT_IP),
+            rule("proxy", network="tcp,udp"),
+        ]}
+    return config
 

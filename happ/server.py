@@ -11,7 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from happ_profile import build
+from happ_profile import build, PROFILE_NAMES, RU_DIRECT_SITES, RU_DIRECT_IP
 
 MAX_SUBSCRIPTION_BYTES = 1024 * 1024
 MAX_PROFILES = 64
@@ -31,10 +31,15 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
 def routing_header():
     routing = json.loads(Path(__file__).with_name("routing.json").read_text())
     routing.update({
-        "Name": "iPhone - YouTube DPI", "UseChunkFiles": "true",
+        "Name": "Happ", "UseChunkFiles": "true",
+        # Refresh existing installations and retain geo categories for BOTH
+        # JSON variants when Happ creates its memory-saving truncated files.
+        "LastUpdated": "1792108800",
         "RemoteDNSType": "DoH", "RemoteDNSDomain": "https://1.1.1.1/dns-query",
         "RemoteDNSIP": "1.1.1.1",
     })
+    routing["DirectSites"] += RU_DIRECT_SITES
+    routing["DirectIp"] += RU_DIRECT_IP
     encoded = base64.b64encode(json.dumps(routing, separators=(",", ":")).encode()).decode()
     return "happ://routing/onadd/" + encoded
 
@@ -52,11 +57,13 @@ def convert(body):
         for link in links:
             if not link.startswith("vless://"):
                 raise InvalidSubscription("Only VLESS TCP REALITY is supported")
-            profile = build(link)
             label = urllib.parse.unquote(urllib.parse.urlsplit(link).fragment)
             label = " ".join(label.split())[:100]
-            profile["remarks"] = "iPhone - YouTube DPI" + (" | " + label if label else "")
-            profiles.append(profile)
+            for mode in PROFILE_NAMES:
+                profile = build(link, mode=mode)
+                if label:
+                    profile["meta"] = {"serverDescription": label}
+                profiles.append(profile)
         return json.dumps(profiles, ensure_ascii=False, separators=(",", ":")).encode()
     except (ValueError, UnicodeError):
         # Do not include the source body, URI or tokens in exceptions or logs.
@@ -169,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(422, b"VLESS TCP REALITY subscription required\n")
             return
         headers.setdefault("profile-update-interval", "1")
-        headers["profile-title"] = "base64:" + base64.b64encode(b"Happ - YouTube DPI").decode()
+        headers["profile-title"] = "base64:" + base64.b64encode(b"Happ").decode()
         headers["routing"] = self.server.routing
         self.respond(200, converted, "application/json; charset=utf-8", headers)
 
