@@ -129,13 +129,6 @@ def build(subscription, port=10808, *, mode="selective"):
             out for out in config["outbounds"]
             if out["tag"] in outbound_tags
         ]
-        if youtube_direct:
-            # A large ClientHello split into 1-3 byte records incurs hundreds
-            # of sleeps on each new connection. Keep TLS record fragmentation
-            # and inter-record pauses, but send fewer records in this mode.
-            # The selective profile retains the original settings as a fallback.
-            youtube = next(out for out in config["outbounds"] if out["tag"] == "youtube-dpi")
-            youtube["settings"]["fragment"]["length"] = "10-20"
         direct_sites = ["geosite:private"]
         direct_ips = ["geoip:private"]
         if mode == "all-except-ru":
