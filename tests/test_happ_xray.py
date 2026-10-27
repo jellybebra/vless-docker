@@ -80,7 +80,13 @@ class XrayRoutingTests(unittest.TestCase):
     def test_all_except_ru_with_youtube_dpi_routing(self):
         self.check_routing("all-except-ru-youtube", [
             ("tcp", "77.88.8.8", 443, "direct"),
-            ("udp", "77.88.8.8", 443, "direct"),
+            ("udp", "77.88.8.8", 443, "block"),
+            # Real Google video cache IPs from an iPhone access log. Without
+            # sniffed SNI they must not bypass the QUIC block via geoip:ru.
+            ("udp", "89.113.122.108", 443, "block"),
+            ("udp", "128.75.235.204", 443, "block"),
+            ("tcp", "89.113.122.108", 443, "direct"),
+            ("udp", "89.113.122.108", 8443, "direct"),
             ("tcp", "example.ru", 443, "direct"),
             ("udp", "example.ru", 443, "direct"),
             ("tcp", "yandex.com", 443, "direct"),
@@ -107,9 +113,19 @@ class XrayRoutingTests(unittest.TestCase):
         uri = ("vless://11111111-1111-4111-8111-111111111111@example.com:443"
                "?type=tcp&security=reality&sni=example.com"
                "&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
-        with socket.socket() as reservation:
-            reservation.bind(("127.0.0.1", 0))
-            port = reservation.getsockname()[1]
+        # Xray binds both protocols; Windows can reserve a UDP port even when
+        # the same TCP port is available.
+        for _ in range(32):
+            with socket.socket() as reservation, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+                reservation.bind(("127.0.0.1", 0))
+                port = reservation.getsockname()[1]
+                try:
+                    udp.bind(("127.0.0.1", port))
+                except OSError:
+                    continue
+                break
+        else:
+            self.fail("No free local TCP/UDP port for Xray")
         with patch("happ_profile.socket.getaddrinfo", return_value=[
                 (2, 1, 6, "", ("192.0.2.1", 443))]):
             config = build(uri, port=port, mode=mode)

@@ -146,10 +146,11 @@ def build(subscription, port=10808, *, mode="selective"):
                 rule("block", domain=YOUTUBE, network="udp", port="443"),
                 rule("youtube-dpi", domain=YOUTUBE, network="tcp"),
                 rule("direct", domain=RU_DIRECT_SITES),
-                rule("direct", ip=RU_DIRECT_IP),
-                # Preserve the existing DPI mode's fallback for unrecognized
-                # QUIC, without blocking ordinary Russian or local UDP/443.
+                # IP-only QUIC to Russian Google caches must not escape through
+                # geoip:ru when sniffing misses the hostname. Keep private
+                # destinations and recognized Russian domains above this rule.
                 rule("block", network="udp", port="443"),
+                rule("direct", ip=RU_DIRECT_IP),
             ]
         rules.append(rule("proxy", network="tcp,udp"))
         config["routing"] = {"domainStrategy": "IPOnDemand", "rules": rules}
