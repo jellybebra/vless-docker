@@ -97,7 +97,8 @@ build_proton_outbound() {
 
 build_task_routing() {
   local xray_setting="$1" proton_outbound="$2" fallback_tag="${3:-direct}"
-  jq -ce --argjson proton "$proton_outbound" --arg fallback_tag "$fallback_tag" '
+  jq -ce --slurpfile openai "$(dirname -- "${BASH_SOURCE[0]}")/openai-routing.json" \
+    --argjson proton "$proton_outbound" --arg fallback_tag "$fallback_tag" '
     [
       {type:"field", inboundTag:["api"], outboundTag:"api"},
       {type:"field", ip:["geoip:ru"], outboundTag:"blocked"},
@@ -107,8 +108,7 @@ build_task_routing() {
     {type:"field", network:"tcp,udp", outboundTag:$fallback_tag} as $fallback |
     [{type:"field", network:"tcp,udp", outboundTag:"warp"},
      {type:"field", network:"tcp,udp", outboundTag:"direct"}] as $old_fallbacks |
-    ["domain:chatgpt.com", "domain:openai.com", "domain:oaistatic.com",
-     "domain:oaiusercontent.com", "domain:chat.com"] as $openai_domains |
+    $openai[0].domains as $openai_domains |
     # Preserve custom rules; replace only the rules managed by this provisioner.
     [.routing.rules[]? | select(. as $rule |
       ($base | index($rule)) == null and ($old_fallbacks | index($rule)) == null and
@@ -137,7 +137,8 @@ build_task_routing() {
       [{type:"field", inboundTag:["proton-openai-dns"], network:"tcp,udp",
         outboundTag:"proton-openai"}]
     end) + $base[1:] + (if $proton == null then [] else
-      [{type:"field", domain:$openai_domains, network:"tcp,udp", outboundTag:"proton-openai"}]
+      [{type:"field", domain:$openai_domains, network:"tcp,udp", outboundTag:"proton-openai"},
+       {type:"field", ip:$openai[0].voiceIPs, network:"udp", port:"3478", outboundTag:"proton-openai"}]
     end) + $custom + [$fallback])
   ' <<< "$xray_setting"
 }

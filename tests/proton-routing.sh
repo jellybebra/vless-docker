@@ -70,7 +70,11 @@ jq -e '
   .routing.rules[1].inboundTag == ["proton-openai-dns"] and
   .routing.rules[2].ip == ["geoip:ru"] and
   .routing.rules[5].outboundTag == "proton-openai" and
-  .routing.rules[6].domain == ["domain:example.org"] and
+  .routing.rules[6].network == "udp" and .routing.rules[6].port == "3478" and
+  (.routing.rules[6].ip | index("172.203.39.49/32")) != null and
+  (.routing.rules[5].domain | index("domain:oaistatsig.com")) != null and
+  .dns.servers[0].domains == .routing.rules[5].domain and
+  .routing.rules[7].domain == ["domain:example.org"] and
   .routing.rules[-1].outboundTag == "direct" and
   .dns.servers[0].address == "10.2.0.1" and .dns.servers[0].finalQuery and
   .dns.servers[-1] == "1.1.1.1" and .dns.tag == "existing-dns" and
@@ -125,6 +129,16 @@ ensure_outbound_configuration
 jq -e '.routing.rules[-1].outboundTag == "direct" and
   ([.outbounds[].tag] | index("warp") | not)' "$task_tmp/panel-template.json" >/dev/null
 ensure_outbound_configuration
+masque='{"tag":"warp","protocol":"masque","settings":{"address":"192.0.2.2","port":443},"streamSettings":{"network":"masque","security":"tls","masqueSettings":{"warp":{"privateKey":"synthetic-registration"}}}}'
+jq --argjson masque "$masque" '.outbounds += [$masque]' "$task_tmp/panel-template.json" > "$task_tmp/masque.json"
+mv "$task_tmp/masque.json" "$task_tmp/panel-template.json"
+WARP_ENABLED=true
+ensure_outbound_configuration
+jq -e --argjson masque "$masque" '
+  [.outbounds[] | select(.tag == "warp")] == [$masque] and
+  .routing.rules[-1].outboundTag == "warp"
+' "$task_tmp/panel-template.json" >/dev/null
+WARP_ENABLED=false
 wait_for_panel() { :; }
 login_panel() { :; }
 docker() { [[ "$*" == 'compose restart vless' ]]; }

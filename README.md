@@ -65,7 +65,7 @@ docker compose -f traefik.web.yml up -d
    ```bash
    mkdir -p /opt/vless && cd /opt/vless
    ```
-2. Скопируйте [docker-compose.yml](docker-compose.yml), [entrypoint.sh](entrypoint.sh), [proton-routing.sh](proton-routing.sh), папку [happ](happ) и [.env](.env.example), заполнив данные от панели и домена.
+2. Скопируйте [docker-compose.yml](docker-compose.yml), [entrypoint.sh](entrypoint.sh), [proton-routing.sh](proton-routing.sh), [openai-routing.json](openai-routing.json), папку [happ](happ) и [.env](.env.example), заполнив данные от панели и домена.
 3. Запустите скрипт автоматической настройки на хосте:
    ```bash
    bash entrypoint.sh
@@ -139,6 +139,11 @@ XRAY_BIN=/path/to/xray XRAY_LOCATION_ASSET=/path/to/geo-files \
 
 Опциональный выход `proton-openai` направляет домены `chatgpt.com`, `openai.com`,
 `oaistatic.com`, `oaiusercontent.com` и `chat.com` (включая поддомены) через Proton.
+Список [openai-routing.json](openai-routing.json) также включает вспомогательные
+домены из официальных сетевых рекомендаций OpenAI и IP ChatGPT Voice для UDP/3478.
+Список проверен 22 октября 2026 года; IP голоса нужно обновлять из указанного в нём источника.
+Общие сервисы (например, Cloudflare challenges, Stripe, Intercom) идут через Proton
+и при использовании другими сайтами: доменная маршрутизация не различает вкладки.
 Остальной трафик идёт напрямую. WARP выключен по умолчанию и используется для
 остального трафика только при `WARP_ENABLED=true`. Существующие правила блокировки
 сохраняют приоритет, пользовательские правила сохраняются перед общим выходом.
@@ -191,7 +196,8 @@ XRAY_BIN=/path/to/xray XRAY_LOCATION_ASSET=/path/to/geo-files \
 
 Маршрутизация по доменам требует, чтобы клиент передавал имя назначения либо
 сниффинг Xray определял его. Для QUIC нужен сниффинг `quic` на существующем входе.
-Голос/WebRTC и запросы к IP без имени могут не попасть под доменное правило;
+Для голоса есть отдельное правило по опубликованным IP и UDP/3478.
+Другие запросы к IP без имени могут не попасть под доменное правило;
 это нужно проверить на реальном клиенте, список доменов не гарантирует охват
 всех будущих соединений Dots. Настройки существующих входов команда не меняет.
 
@@ -209,9 +215,20 @@ VPN меняет сетевой выход, но не тариф или прав
 
 ```bash
 docker run --rm --mount "type=bind,source=$(pwd),target=/work,readonly" \
-  --workdir /work --entrypoint sh ghcr.io/mhsanaei/3x-ui:3.2.5 \
+  --workdir /work --entrypoint sh ghcr.io/mhsanaei/3x-ui:3.11.0 \
   -c 'apk add --no-cache jq >/dev/null && bash tests/proton-routing.sh'
 ```
+
+### WARP/MASQUE
+
+В 3x-ui 3.11.0 зарегистрируйте MASQUE через **Xray Configs → Outbounds → WARP**,
+оставьте тег `warp` и включите `WARP_ENABLED=true`. Скрипт сохраняет существующий
+MASQUE; если выхода ещё нет, автоматическая регистрация создаёт WireGuard.
+Для всего трафика через WARP оставьте `PROTON_WG_CONFIG` пустым и проверьте,
+что пользовательские правила тоже ведут в `warp`, без прямого резервного выхода.
+Перед обновлением сохраните SQLite-базу; откат старой версии требует старой базы.
+Проверяйте реальные клиенты, включая голос Discord: старый REALITY-клиент Huawei
+потребовал совместимой сборки Xray 26.10.21.
 
 ### Cloudflare Tunnel
 

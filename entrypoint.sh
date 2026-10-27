@@ -335,24 +335,24 @@ normalize_path_with_slashes() {
 }
 
 panel_get_settings() {
-  api_post "/panel/setting/all"
+  api_post "/panel/api/setting/all"
 }
 
 panel_update_settings() {
   local settings_json="$1"
-  api_post "/panel/setting/update" \
+  api_post "/panel/api/setting/update" \
     -H "Content-Type: application/json" \
     -d "${settings_json}"
 }
 
 panel_get_xray_setting() {
-  api_post "/panel/xray/"
+  api_post "/panel/api/xray/"
 }
 
 panel_update_xray_setting() {
   local xray_setting_json="$1"
   local outbound_test_url="$2"
-  api_post "/panel/xray/update" \
+  api_post "/panel/api/xray/update" \
     --data-urlencode "xraySetting=${xray_setting_json}" \
     --data-urlencode "outboundTestUrl=${outbound_test_url}"
 }
@@ -370,7 +370,8 @@ ensure_outbound_configuration() {
   outbound_test_url="$(jq -r '.outboundTestUrl // "https://www.google.com/generate_204"' <<<"${xray_payload}")"
 
   # 1. Check if WARP outbound already exists
-  warp_exists="$(jq -r '.outbounds[]? | select(.tag == "warp" and .protocol == "wireguard") | .tag' <<<"${xray_setting}")"
+  # Preserve native MASQUE registrations instead of creating a duplicate tag.
+  warp_exists="$(jq -r '.outbounds[]? | select(.tag == "warp" and (.protocol == "wireguard" or .protocol == "masque")) | .tag' <<<"${xray_setting}")"
 
   if [[ "$WARP_ENABLED" == true && -z "${warp_exists}" ]]; then
     log "WARP outbound not found. Registering a new free Cloudflare WARP account ..."
