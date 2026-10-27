@@ -17,7 +17,7 @@ MAX_SUBSCRIPTION_BYTES = 1024 * 1024
 MAX_PROFILES = 64
 # Keep the retired trial URL refreshable so installed subscriptions recover
 # the ordinary, working profiles rather than retaining the failed trial.
-TOKEN_PATH = re.compile(r"/happ/([A-Za-z0-9_-]{1,128})(?:/youtube-fast)?\Z")
+TOKEN_PATH = re.compile(r"/happ/([A-Za-z0-9_-]{1,128})(?:/(youtube-fast|debug))?\Z")
 PASSTHROUGH_HEADERS = ("subscription-userinfo", "profile-update-interval")
 
 
@@ -46,7 +46,7 @@ def routing_header():
     return "happ://routing/onadd/" + encoded
 
 
-def convert(body):
+def convert(body, *, debug=False):
     try:
         text = body.decode("utf-8-sig").strip()
         if not text.startswith("vless://"):
@@ -63,6 +63,10 @@ def convert(body):
             label = " ".join(label.split())[:100]
             for mode in PROFILE_NAMES:
                 profile = build(link, mode=mode)
+                if debug:
+                    # JSON subscriptions carry their own core log level. Make
+                    # diagnostics explicit instead of relying on an app toggle.
+                    profile["log"].update({"loglevel": "debug", "dnsLog": True})
                 if label:
                     profile["meta"] = {"serverDescription": label}
                 profiles.append(profile)
@@ -150,6 +154,7 @@ class Handler(BaseHTTPRequestHandler):
         if not match:
             self.respond(404, b"Not found\n")
             return
+        debug = match.group(2) == "debug"
         request_headers = {
             "User-Agent": "Happ", "Accept-Encoding": "identity",
         }
@@ -165,7 +170,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(body) > MAX_SUBSCRIPTION_BYTES:
                 self.respond(502, b"Subscription too large\n")
                 return
-            converted = convert(body)
+            converted = convert(body, debug=debug)
         except urllib.error.HTTPError as error:
             status = error.code if error.code in (401, 403, 404, 410, 429) else 502
             error.close()
@@ -178,7 +183,8 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(422, b"VLESS TCP REALITY subscription required\n")
             return
         headers.setdefault("profile-update-interval", "1")
-        headers["profile-title"] = "base64:" + base64.b64encode(b"Happ").decode()
+        title = "Happ — диагностика" if debug else "Happ"
+        headers["profile-title"] = "base64:" + base64.b64encode(title.encode()).decode()
         headers["routing"] = self.server.routing
         self.respond(200, converted, "application/json; charset=utf-8", headers)
 

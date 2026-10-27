@@ -128,6 +128,39 @@ class SubscriptionTests(unittest.TestCase):
         Upstream.status = 404
         self.assertEqual(self.get("/happ/sample-token/youtube-fast")[0], 404)
 
+    def test_debug_subscription_only_changes_logging(self):
+        for encoded in (False, True):
+            with self.subTest(base64=encoded):
+                source = (uri() + "\n" + uri(host="new.example.com", name="Second")).encode()
+                Upstream.body = base64.b64encode(source) if encoded else source
+                _, normal_headers, before = self.get()
+                status, headers, body = self.get("/happ/sample-token/debug")
+                self.assertEqual(status, 200)
+                profiles = json.loads(body)
+                ordinary = json.loads(before)
+                self.assertEqual(len(profiles), len(ordinary))
+                self.assertEqual(headers["routing"], normal_headers["routing"])
+                self.assertEqual(base64.b64decode(headers["profile-title"].split(":", 1)[1]).decode(),
+                                 "Happ — диагностика")
+                for diagnostic, normal in zip(profiles, ordinary):
+                    self.assertEqual(diagnostic["log"], {"loglevel": "debug", "dnsLog": True})
+                    diagnostic["log"] = normal["log"]
+                    self.assertEqual(diagnostic, normal)
+                self.assertEqual(self.get()[2], before)
+                self.assertEqual(Upstream.calls[-3:], ["/sub/sample-token"] * 3)
+
+    def test_debug_subscription_uses_upstream_authorization_and_head(self):
+        path = "/happ/sample-token/debug"
+        Upstream.required_host = "subscription.example.com"
+        self.assertEqual(self.get(path)[0], 403)
+        self.adapter.upstream_host = Upstream.required_host
+        status, headers, body = self.get(path, method="HEAD")
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"")
+        self.assertGreater(int(headers["Content-Length"]), 0)
+        Upstream.status = 404
+        self.assertEqual(self.get(path)[0], 404)
+
     def test_refresh_updates_credentials_address_and_server_list(self):
         _, _, first = self.get()
         Upstream.body = (uri("22222222-2222-4222-8222-222222222222", "new.example.com", "New")
@@ -199,7 +232,9 @@ class SubscriptionTests(unittest.TestCase):
     def test_path_validation_prevents_upstream_url_injection(self):
         for path in ("/happ/../other", "/happ/%2fsecret", "/happ/token?url=http://evil.example",
                      "/happ/token/extra", "/happ/", "/sub/token",
-                     "/happ/token/youtube-fast/extra", "/happ/token/youtube-fast?x=1"):
+                     "/happ/token/youtube-fast/extra", "/happ/token/youtube-fast?x=1",
+                     "/happ/token/debug/extra", "/happ/token/debug?x=1",
+                     "/happ/token/youtube-fast/debug", "/happ/token%2fdebug"):
             self.assertEqual(self.get(path)[0], 404)
         self.assertEqual(Upstream.calls, [])
 
@@ -238,6 +273,7 @@ class SubscriptionTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stderr(output), contextlib.redirect_stdout(output):
             self.assertEqual(self.get("/happ/private-secret-token")[0], 200)
+            self.assertEqual(self.get("/happ/private-secret-token/debug")[0], 200)
         self.assertNotIn("private-secret-token", output.getvalue())
 
 
