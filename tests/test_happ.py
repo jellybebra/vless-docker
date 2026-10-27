@@ -139,6 +139,42 @@ class SubscriptionTests(unittest.TestCase):
             self.assertEqual(server["address"], "example.com")
             self.assertEqual(server["users"][0]["id"], "11111111-1111-4111-8111-111111111111")
 
+    def test_youtube_trial_is_opt_in_and_only_changes_interval_and_name(self):
+        for encoded in (False, True):
+            with self.subTest(base64=encoded):
+                source = (uri() + "\n" + uri(host="new.example.com", name="Second")).encode()
+                Upstream.body = base64.b64encode(source) if encoded else source
+                _, _, before = self.get()
+                status, headers, body = self.get("/happ/sample-token/youtube-fast")
+                self.assertEqual(status, 200)
+                trials = json.loads(body)
+                self.assertEqual(len(trials), 2)
+                title = base64.b64decode(headers["profile-title"].split(":", 1)[1]).decode()
+                self.assertEqual(title, "Happ — тест YouTube")
+                for trial, standard in zip(trials, json.loads(before)[3::4]):
+                    self.assertEqual(trial["remarks"], "Тест: YouTube без пауз")
+                    youtube = next(out for out in trial["outbounds"] if out["tag"] == "youtube-dpi")
+                    self.assertEqual(youtube["settings"]["fragment"], {
+                        "packets": "tlshello", "length": "1-3", "interval": "0"})
+                    youtube["settings"]["fragment"]["interval"] = "1-2"
+                    trial["remarks"] = standard["remarks"]
+                    self.assertEqual(trial, standard)
+                # A trial request cannot mutate later ordinary subscriptions.
+                self.assertEqual(self.get()[2], before)
+                self.assertEqual(Upstream.calls[-3:], ["/sub/sample-token"] * 3)
+
+    def test_youtube_trial_uses_same_authorization_and_head_semantics(self):
+        path = "/happ/sample-token/youtube-fast"
+        Upstream.required_host = "subscription.example.com"
+        self.assertEqual(self.get(path)[0], 403)
+        self.adapter.upstream_host = Upstream.required_host
+        status, headers, body = self.get(path, method="HEAD")
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"")
+        self.assertGreater(int(headers["Content-Length"]), 0)
+        Upstream.status = 404
+        self.assertEqual(self.get(path)[0], 404)
+
     def test_shared_geo_assets_cover_every_variant(self):
         _, headers, body = self.get()
         routing = json.loads(base64.b64decode(headers["routing"].rsplit("/", 1)[1]))
@@ -187,7 +223,9 @@ class SubscriptionTests(unittest.TestCase):
 
     def test_path_validation_prevents_upstream_url_injection(self):
         for path in ("/happ/../other", "/happ/%2fsecret", "/happ/token?url=http://evil.example",
-                     "/happ/token/extra", "/happ/", "/sub/token"):
+                     "/happ/token/extra", "/happ/", "/sub/token",
+                     "/happ/token/youtube-fast/extra", "/happ/token/youtube-fast?x=1",
+                     "/happ/token%2fyoutube-fast", "/happ//youtube-fast"):
             self.assertEqual(self.get(path)[0], 404)
         self.assertEqual(Upstream.calls, [])
 
@@ -226,6 +264,7 @@ class SubscriptionTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stderr(output), contextlib.redirect_stdout(output):
             self.assertEqual(self.get("/happ/private-secret-token")[0], 200)
+            self.assertEqual(self.get("/happ/private-secret-token/youtube-fast")[0], 200)
         self.assertNotIn("private-secret-token", output.getvalue())
 
 

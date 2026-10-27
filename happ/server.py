@@ -15,7 +15,7 @@ from happ_profile import build, PROFILE_NAMES, RU_DIRECT_SITES, RU_DIRECT_IP
 
 MAX_SUBSCRIPTION_BYTES = 1024 * 1024
 MAX_PROFILES = 64
-TOKEN_PATH = re.compile(r"/happ/([A-Za-z0-9_-]{1,128})\Z")
+TOKEN_PATH = re.compile(r"/happ/([A-Za-z0-9_-]{1,128})(/youtube-fast)?\Z")
 PASSTHROUGH_HEADERS = ("subscription-userinfo", "profile-update-interval")
 
 
@@ -44,7 +44,7 @@ def routing_header():
     return "happ://routing/onadd/" + encoded
 
 
-def convert(body):
+def convert(body, *, youtube_trial=False):
     try:
         text = body.decode("utf-8-sig").strip()
         if not text.startswith("vless://"):
@@ -59,8 +59,16 @@ def convert(body):
                 raise InvalidSubscription("Only VLESS TCP REALITY is supported")
             label = urllib.parse.unquote(urllib.parse.urlsplit(link).fragment)
             label = " ".join(label.split())[:100]
-            for mode in PROFILE_NAMES:
+            modes = ("all-except-ru-youtube",) if youtube_trial else PROFILE_NAMES
+            for mode in modes:
                 profile = build(link, mode=mode)
+                if youtube_trial:
+                    profile["remarks"] = "Тест: YouTube без пауз"
+                    youtube = next(out for out in profile["outbounds"] if out["tag"] == "youtube-dpi")
+                    # Keep tiny TLS records. Xray interval=0 batches those
+                    # records into a write without sleeps; DPI compatibility
+                    # must be checked on the client network, not on loopback.
+                    youtube["settings"]["fragment"]["interval"] = "0"
                 if label:
                     profile["meta"] = {"serverDescription": label}
                 profiles.append(profile)
@@ -148,6 +156,7 @@ class Handler(BaseHTTPRequestHandler):
         if not match:
             self.respond(404, b"Not found\n")
             return
+        youtube_trial = bool(match.group(2))
         request_headers = {
             "User-Agent": "Happ", "Accept-Encoding": "identity",
         }
@@ -163,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(body) > MAX_SUBSCRIPTION_BYTES:
                 self.respond(502, b"Subscription too large\n")
                 return
-            converted = convert(body)
+            converted = convert(body, youtube_trial=youtube_trial)
         except urllib.error.HTTPError as error:
             status = error.code if error.code in (401, 403, 404, 410, 429) else 502
             error.close()
@@ -176,7 +185,8 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(422, b"VLESS TCP REALITY subscription required\n")
             return
         headers.setdefault("profile-update-interval", "1")
-        headers["profile-title"] = "base64:" + base64.b64encode(b"Happ").decode()
+        title = "Happ — тест YouTube" if youtube_trial else "Happ"
+        headers["profile-title"] = "base64:" + base64.b64encode(title.encode()).decode()
         headers["routing"] = self.server.routing
         self.respond(200, converted, "application/json; charset=utf-8", headers)
 
