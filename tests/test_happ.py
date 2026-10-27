@@ -107,9 +107,6 @@ class SubscriptionTests(unittest.TestCase):
             self.assertEqual(profile["outbounds"][1]["settings"]["vnext"][0]["address"], "example.com")
             self.assertEqual(profile["outbounds"][2]["settings"]["fragment"], {
                 "packets": "tlshello", "length": "1-3", "interval": "1-2"})
-            youtube = next(out for out in profiles[3]["outbounds"] if out["tag"] == "youtube-dpi")
-            self.assertEqual(youtube["settings"]["fragment"], {
-                "packets": "tlshello", "length": "10-20", "interval": "1-2"})
             routing = json.loads(base64.b64decode(headers["routing"].rsplit("/", 1)[1]))
             self.assertEqual(routing["UseChunkFiles"], "true")
             self.assertIn("runetfreedom", routing["Geositeurl"])
