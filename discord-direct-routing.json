@@ -1,0 +1,19 @@
+{
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "ruleTag": "discord-direct-domains",
+        "domain": ["geosite:discord"],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "ruleTag": "discord-direct-voice",
+        "network": "udp",
+        "port": "19294-19344,50000-50099",
+        "outboundTag": "direct"
+      }
+    ]
+  }
+}
