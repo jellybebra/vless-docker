@@ -90,6 +90,19 @@ jq -e '.routing.rules[-1].outboundTag == "warp"' <<< "$warp_enabled" >/dev/null
 no_dns="$(build_task_routing '{"outbounds":[],"routing":{}}' "$proton")"
 jq -e '.dns.servers[-1] == "localhost"' <<< "$no_dns" >/dev/null
 
+# Discord must keep its direct exit even when the default exit is WARP.
+discord_base="$(jq --slurpfile discord discord-direct-routing.json \
+  '.outbounds += [{tag:"direct",protocol:"freedom"}] |
+   .routing.rules = ($discord[0].routing.rules + .routing.rules)' <<< "$base")"
+discord_warp="$(build_task_routing "$discord_base" "$proton" warp)"
+jq -e --slurpfile discord discord-direct-routing.json '
+  [.routing.rules[] | select(.ruleTag // "" | startswith("discord-direct-"))]
+    == $discord[0].routing.rules and
+  .routing.rules[-1].outboundTag == "warp" and
+  ([.outbounds[] | select(.tag == "direct" and .protocol == "freedom")] | length) == 1
+' <<< "$discord_warp" >/dev/null
+[[ "$discord_warp" == "$(build_task_routing "$discord_warp" "$proton" warp)" ]]
+
 # Check the actual version of Xray bundled with the project's pinned image.
 if [[ -x /app/bin/xray-linux-amd64 ]]; then
   jq '.api = {tag:"api", services:["HandlerService"]} |
