@@ -1,0 +1,31 @@
+{
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "ruleTag": "gemini-aistudio-direct",
+        "domain": [
+          "domain:gemini.google.com",
+          "domain:gemini.google",
+          "domain:bard.google.com",
+          "domain:aistudio.google.com",
+          "domain:ai.studio",
+          "domain:makersuite.google.com",
+          "domain:ai.google.dev",
+          "domain:generativeai.google",
+          "domain:generativelanguage.googleapis.com",
+          "domain:geller-pa.googleapis.com",
+          "domain:proactivebackend-pa.googleapis.com",
+          "domain:robinfrontend-pa.googleapis.com",
+          "domain:alkalicore-pa.clients6.google.com",
+          "domain:alkalimakersuite-pa.clients6.google.com",
+          "domain:webchannel-alkalimakersuite-pa.clients6.google.com",
+          "domain:geminiweb-pa.clients.google.com",
+          "domain:geminiweb-pa.clients6.google.com",
+          "domain:gemini.gstatic.com"
+        ],
+        "outboundTag": "direct"
+      }
+    ]
+  }
+}
