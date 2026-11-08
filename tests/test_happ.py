@@ -189,6 +189,8 @@ class SubscriptionTests(unittest.TestCase):
         available = set()
         for field in ("DirectSites", "DirectIp", "ProxySites", "ProxyIp", "BlockSites", "BlockIp"):
             available.update(routing[field])
+        self.assertNotIn("geosite:pinterest", {value.lower() for value in available})
+        self.assertIn("domain:pinterest.com", routing["DirectSites"])
         for profile in json.loads(body):
             for rule in profile["routing"]["rules"]:
                 for value in rule.get("domain", []) + rule.get("ip", []):

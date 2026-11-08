@@ -18,6 +18,23 @@ RU_DIRECT_SITES = [
 ]
 RU_DIRECT_IP = ["geoip:ru"]
 
+# Happ's bundled geosite.dat may omit PINTEREST. Keep its domain suffixes
+# explicit so every generated profile can start with those assets.
+PINTEREST = ["domain:" + d for d in (
+    "pin.it", "pinimg.com", "pinimg.com.cdn.cloudflare.net", "pinterest.map.fastly.net",
+    "pinterest.at", "pinterest.be", "pinterest.ca", "pinterest.ch", "pinterest.cl",
+    "pinterest.co", "pinterest.co.at", "pinterest.co.in", "pinterest.co.kr",
+    "pinterest.co.nz", "pinterest.co.uk", "pinterest.com", "pinterest.com.au",
+    "pinterest.com.bo", "pinterest.com.ec", "pinterest.com.mx", "pinterest.com.pe",
+    "pinterest.com.py", "pinterest.com.uy", "pinterest.com.vn", "pinterest.de",
+    "pinterest.dk", "pinterest.ec", "pinterest.engineering", "pinterest.es",
+    "pinterest.fr", "pinterest.hu", "pinterest.id", "pinterest.ie", "pinterest.in",
+    "pinterest.info", "pinterest.it", "pinterest.jp", "pinterest.kr", "pinterest.mx",
+    "pinterest.net", "pinterest.nl", "pinterest.nz", "pinterest.pe", "pinterest.ph",
+    "pinterest.pt", "pinterest.ru", "pinterest.se", "pinterest.th", "pinterest.tw",
+    "pinterest.uk", "pinterest.vn", "pinterestmail.com",
+)]
+
 YOUTUBE = [
     "regexp:(^|\\.)youtube\\.[a-z.]+$",
     *["domain:" + d for d in (
@@ -100,7 +117,7 @@ def build(subscription, port=10808, *, mode="selective"):
         "routing": {"domainStrategy": base["DomainStrategy"], "rules": [
             rule("dns-out", port="53", network="tcp,udp"),
             rule("direct", ip=base["DirectIp"]),
-            rule("direct", domain=base["DirectSites"]),
+            rule("direct", domain=base["DirectSites"] + PINTEREST),
             # Supercell's game protocol has no HTTP/TLS domain for sniffing.
             # Cover IP-only login/game traffic; private destinations stay direct.
             # Other apps connecting to this destination port also use the proxy.
@@ -130,6 +147,8 @@ def build(subscription, port=10808, *, mode="selective"):
             if out["tag"] in outbound_tags
         ]
         direct_sites = ["geosite:private"]
+        if mode != "all":
+            direct_sites += PINTEREST
         direct_ips = ["geoip:private"]
         if mode == "all-except-ru":
             direct_sites += RU_DIRECT_SITES
