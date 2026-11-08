@@ -11,7 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from happ_profile import build, PROFILE_NAMES, RU_DIRECT_SITES, RU_DIRECT_IP
+from happ_profile import build, PINTEREST, PROFILE_NAMES, RU_DIRECT_SITES, RU_DIRECT_IP
 
 MAX_SUBSCRIPTION_BYTES = 1024 * 1024
 MAX_PROFILES = 64
@@ -36,11 +36,11 @@ def routing_header():
         "Name": "Happ", "UseChunkFiles": "true",
         # Refresh existing installations and retain geo categories for all
         # JSON variants when Happ creates its memory-saving truncated files.
-        "LastUpdated": "1792108800",
+        "LastUpdated": "1794145784",
         "RemoteDNSType": "DoH", "RemoteDNSDomain": "https://1.1.1.1/dns-query",
         "RemoteDNSIP": "1.1.1.1",
     })
-    routing["DirectSites"] += RU_DIRECT_SITES
+    routing["DirectSites"] += RU_DIRECT_SITES + PINTEREST
     routing["DirectIp"] += RU_DIRECT_IP
     encoded = base64.b64encode(json.dumps(routing, separators=(",", ":")).encode()).decode()
     return "happ://routing/onadd/" + encoded

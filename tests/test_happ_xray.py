@@ -110,6 +110,12 @@ class XrayRoutingTests(unittest.TestCase):
         ])
 
     def check_routing(self, mode, cases):
+        pinterest_route = "proxy" if mode == "all" else "direct"
+        cases = cases + [
+            ("tcp", "api.pinterest.com", 443, pinterest_route),
+            ("tcp", "pin.it", 443, pinterest_route),
+            ("udp", "i.pinimg.com", 443, pinterest_route),
+        ]
         uri = ("vless://11111111-1111-4111-8111-111111111111@example.com:443"
                "?type=tcp&security=reality&sni=example.com"
                "&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
@@ -131,6 +137,8 @@ class XrayRoutingTests(unittest.TestCase):
             config = build(uri, port=port, mode=mode)
         # Deterministic DNS without Internet access, including geo-IP fallback.
         config["dns"]["hosts"].update({
+            "api.pinterest.com": "93.184.216.34", "pin.it": "93.184.216.34",
+            "i.pinimg.com": "93.184.216.34",
             "www.youtube.com": "93.184.216.34",
             "rr1.googlevideo.com": "93.184.216.34",
             "rr2.googlevideo.com": "77.88.8.8",
