@@ -1,0 +1,16 @@
+{
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "ruleTag": "sony-auth-direct",
+        "domain": [
+          "domain:mysony.sony.net",
+          "domain:account.sony.com",
+          "domain:auth.api.sonyentertainmentnetwork.com"
+        ],
+        "outboundTag": "direct"
+      }
+    ]
+  }
+}
