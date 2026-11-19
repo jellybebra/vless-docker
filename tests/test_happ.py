@@ -15,10 +15,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "happ"))
 from server import Server, MAX_SUBSCRIPTION_BYTES, MAX_PROFILES
 
-EXPECTED_NAMES = [
-    "Заблокированное + YouTube без рекламы", "Всё, кроме РФ",
-    "Всё", "Всё, кроме РФ + YouTube без рекламы",
-]
+EXPECTED_NAMES = ["Всё, кроме РФ", "Всё"]
 
 
 def uri(client="11111111-1111-4111-8111-111111111111", host="example.com", name="Server"):
@@ -100,13 +97,11 @@ class SubscriptionTests(unittest.TestCase):
             profiles = json.loads(data)
             self.assertEqual([p["remarks"] for p in profiles], EXPECTED_NAMES)
             self.assertEqual([p["meta"]["serverDescription"] for p in profiles],
-                             ["Server"] * 4)
+                             ["Server"] * len(EXPECTED_NAMES))
             profile = profiles[0]
             for variant in profiles[1:]:
                 self.assertEqual(variant["outbounds"][1], profile["outbounds"][1])
             self.assertEqual(profile["outbounds"][1]["settings"]["vnext"][0]["address"], "example.com")
-            self.assertEqual(profile["outbounds"][2]["settings"]["fragment"], {
-                "packets": "tlshello", "length": "1-3", "interval": "1-2"})
             routing = json.loads(base64.b64decode(headers["routing"].rsplit("/", 1)[1]))
             self.assertEqual(routing["UseChunkFiles"], "true")
             self.assertIn("runetfreedom", routing["Geositeurl"])
@@ -169,16 +164,16 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertNotEqual(first, second)
         profiles = json.loads(second)
-        self.assertEqual(len(profiles), 8)
-        for profile in profiles[:4]:
+        self.assertEqual([p["remarks"] for p in profiles], EXPECTED_NAMES * 2)
+        for profile in profiles[:len(EXPECTED_NAMES)]:
             server = profile["outbounds"][1]["settings"]["vnext"][0]
             self.assertEqual(server["address"], "new.example.com")
             self.assertEqual(server["users"][0]["id"], "22222222-2222-4222-8222-222222222222")
             self.assertEqual(profile["dns"]["hosts"], {"new.example.com": "192.0.2.1"})
             self.assertEqual(profile["meta"]["serverDescription"], "New")
-        self.assertEqual([p["meta"]["serverDescription"] for p in profiles[4:]],
-                         ["Second"] * 4)
-        for profile in profiles[4:]:
+        self.assertEqual([p["meta"]["serverDescription"] for p in profiles[len(EXPECTED_NAMES):]],
+                         ["Second"] * len(EXPECTED_NAMES))
+        for profile in profiles[len(EXPECTED_NAMES):]:
             server = profile["outbounds"][1]["settings"]["vnext"][0]
             self.assertEqual(server["address"], "example.com")
             self.assertEqual(server["users"][0]["id"], "11111111-1111-4111-8111-111111111111")

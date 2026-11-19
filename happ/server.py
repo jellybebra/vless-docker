@@ -11,10 +11,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from happ_profile import build, PINTEREST, PROFILE_NAMES, RU_DIRECT_SITES, RU_DIRECT_IP
+from happ_profile import build, PINTEREST, RU_DIRECT_SITES, RU_DIRECT_IP
 
 MAX_SUBSCRIPTION_BYTES = 1024 * 1024
 MAX_PROFILES = 64
+SUBSCRIPTION_MODES = ("all-except-ru", "all")
 # Keep the retired trial URL refreshable so installed subscriptions recover
 # the ordinary, working profiles rather than retaining the failed trial.
 TOKEN_PATH = re.compile(r"/happ/([A-Za-z0-9_-]{1,128})(?:/(youtube-fast|debug))?\Z")
@@ -61,7 +62,7 @@ def convert(body, *, debug=False):
                 raise InvalidSubscription("Only VLESS TCP REALITY is supported")
             label = urllib.parse.unquote(urllib.parse.urlsplit(link).fragment)
             label = " ".join(label.split())[:100]
-            for mode in PROFILE_NAMES:
+            for mode in SUBSCRIPTION_MODES:
                 profile = build(link, mode=mode)
                 if debug:
                     # JSON subscriptions carry their own core log level. Make
