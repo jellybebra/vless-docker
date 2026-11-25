@@ -70,6 +70,8 @@ def convert(body, *, debug=False):
                     profile["log"].update({"loglevel": "debug", "dnsLog": True})
                 if label:
                     profile["meta"] = {"serverDescription": label}
+                    if re.match(r"^[🇦-🇿]{2}\s", label):
+                        profile["remarks"] = f"{label} — {profile['remarks']}"
                 profiles.append(profile)
         return json.dumps(profiles, ensure_ascii=False, separators=(",", ":")).encode()
     except (ValueError, UnicodeError):
