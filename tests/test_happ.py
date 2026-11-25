@@ -178,6 +178,14 @@ class SubscriptionTests(unittest.TestCase):
             self.assertEqual(server["address"], "example.com")
             self.assertEqual(server["users"][0]["id"], "11111111-1111-4111-8111-111111111111")
 
+    def test_flagged_countries_distinguish_the_same_routing_modes(self):
+        countries = ["🇩🇪 Германия", "🇫🇮 Финляндия"]
+        Upstream.body = "\n".join(uri(name=urllib.parse.quote(country)) for country in countries).encode()
+        status, _, body = self.get()
+        self.assertEqual(status, 200)
+        self.assertEqual([p["remarks"] for p in json.loads(body)],
+                         [f"{country} — {mode}" for country in countries for mode in EXPECTED_NAMES])
+
     def test_shared_geo_assets_cover_every_variant(self):
         _, headers, body = self.get()
         routing = json.loads(base64.b64decode(headers["routing"].rsplit("/", 1)[1]))
